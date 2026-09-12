@@ -2226,262 +2226,422 @@ textarea {
   background: #fff;
 }
 
+/* --- Facture --------------------------------------------------------------
+   Modelled on the pre-printed H.H pads: legal header, green banded totals and
+   a strapline foot. The palette is written out rather than taken from the theme
+   tokens because this block is printed, and a printed invoice must not change
+   when the app's theme does. */
 .invoice-document {
+  --inv-green: #15683c;
+  --inv-green-deep: #0e4b2b;
+  --inv-ink: #14311f;
+  --inv-line: #cfe3d3;
+  --inv-soft: #eef6ee;
+  --inv-soft-alt: #f7fbf6;
+  --inv-orange: #ef8f22;
   background: #fff;
-  color: var(--text);
+  color: var(--inv-ink);
+  font-size: 0.82rem;
+  line-height: 1.45;
 }
 
-.invoice-brand-header {
-  display: grid;
-  grid-template-columns: 58px 1fr auto;
-  align-items: center;
-  gap: 16px;
-  padding: 22px 24px 18px;
-  border-bottom: 2px solid var(--accent);
-}
-
-.invoice-brand-header img {
-  width: 54px;
-  height: 54px;
-  border-radius: 10px;
-  object-fit: cover;
-}
-
-.invoice-brand-header div {
-  display: grid;
-  gap: 3px;
-}
-
-.invoice-brand-header strong {
-  font-family: var(--display-font);
-  font-size: 1.3rem;
-  letter-spacing: -0.02em;
-}
-
-.invoice-brand-header span,
-.invoice-number small {
-  color: var(--muted);
-  font-size: 0.74rem;
-}
-
-.invoice-brand-header div:nth-child(2) span {
-  display: block;
-}
-
-.invoice-number {
-  display: grid;
-  gap: 3px;
-  text-align: right;
-}
-
-.invoice-number span {
-  color: var(--accent);
-  font-weight: 800;
-  font-size: 0.68rem;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-}
-
-.invoice-number strong {
-  font-size: 1.05rem;
-}
-
-.invoice-parties {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 14px;
-  padding: 18px 24px;
-}
-
-.invoice-parties>div {
-  display: grid;
-  gap: 4px;
-  padding: 14px 16px;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  background: var(--panel-soft);
-}
-
-.invoice-parties span {
-  color: var(--accent);
-  font-size: 0.68rem;
-  font-weight: 800;
+/* The registered-business line from the rubber stamp, above everything. */
+.inv-legal-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: center;
+  gap: 6px 16px;
+  margin: 0;
+  padding: 10px 20px;
+  border-bottom: 1px solid var(--inv-line);
+  background: var(--inv-soft-alt);
+  color: var(--inv-green-deep);
+  font-size: 0.72rem;
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
 
-.invoice-parties strong {
-  font-size: 1rem;
+.inv-legal-line strong {
+  font-weight: 800;
+  letter-spacing: 0.16em;
 }
 
-.invoice-parties small {
-  color: var(--muted);
+.inv-legal-line span {
+  color: #46604f;
 }
 
-.print-invoice-table {
-  width: calc(100% - 48px);
-  margin: 0 24px 18px;
-  border-collapse: collapse;
+.inv-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: 18px;
+  padding: 18px 20px 16px;
 }
 
-.print-invoice-table th,
-.print-invoice-table td {
-  padding: 10px 8px;
-  border: 1px solid var(--line);
-  text-align: left;
-  font-size: 0.82rem;
+.inv-brand img {
+  display: block;
+  width: 100%;
+  max-width: 230px;
+  max-height: 96px;
+  object-fit: contain;
+  object-position: left center;
 }
 
-.invoice-product-cell {
+.inv-place {
   display: flex;
   align-items: center;
-  gap: 8px;
-  min-width: 0;
-  overflow-wrap: anywhere;
+  gap: 10px;
+  padding-bottom: 6px;
+  border-bottom: 3px solid var(--inv-orange);
 }
 
-.invoice-product-cell span {
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-
-.invoice-product-cell img {
-  width: 32px;
-  height: 32px;
-  flex: 0 0 32px;
-  border-radius: 6px;
-  object-fit: cover;
-}
-
-.print-invoice-table th {
-  background: var(--accent);
-  color: #fff;
-  font-size: 0.68rem;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-}
-
-.invoice-num-cell {
-  text-align: right;
-}
-
-.muted-dash {
-  color: var(--muted);
-}
-
-.invoice-summary {
+.inv-place div {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 18px;
-  padding: 0 24px 18px;
 }
 
-.invoice-payment-box {
+.inv-place strong {
+  color: var(--inv-green-deep);
+  font-size: 1.05rem;
+  font-weight: 800;
+  line-height: 1.15;
+}
+
+/* A map pin, drawn rather than loaded: one round head on a rotated square. */
+.inv-pin {
+  position: relative;
+  width: 16px;
+  height: 16px;
+  flex: none;
+  border-radius: 50% 50% 50% 0;
+  background: var(--inv-green);
+  transform: rotate(-45deg);
+}
+
+.inv-pin::after {
+  content: '';
+  position: absolute;
+  inset: 5px;
+  border-radius: 50%;
+  background: #fff;
+}
+
+.inv-client {
   display: grid;
-  align-content: start;
-  gap: 8px;
-  padding: 16px;
+  gap: 4px;
+  padding: 12px 14px;
+  border: 1px solid var(--inv-line);
   border-radius: 10px;
-  background: var(--accent-soft);
+  background: var(--inv-soft);
 }
 
-.invoice-payment-box strong:first-child {
-  color: var(--accent);
-  font-size: 0.76rem;
+.inv-client-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.inv-client-row span {
+  flex: none;
+  color: var(--inv-green-deep);
+  font-size: 0.68rem;
+  font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
 }
 
-.invoice-payment-box div,
-.invoice-total-box div {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
+.inv-client-row b {
+  flex: 1;
+  min-width: 0;
+  border-bottom: 1px solid var(--inv-line);
+  font-weight: 700;
+  overflow-wrap: anywhere;
 }
 
-.invoice-payment-box span,
-.invoice-total-box span {
-  color: var(--muted);
-  font-size: 0.82rem;
-}
-
-.invoice-balance-due {
-  color: var(--danger);
-}
-
-.invoice-total-box {
+.inv-meta {
   display: grid;
-  align-content: start;
-  gap: 8px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1px;
+  margin: 0 20px 16px;
+  border: 1px solid var(--inv-line);
+  border-radius: 10px;
+  background: var(--inv-line);
+  overflow: hidden;
 }
 
-.invoice-grand-total {
-  margin-top: 4px;
-  padding: 12px 14px;
-  border-radius: 8px;
-  background: var(--primary);
+.inv-meta div {
+  display: grid;
+  gap: 2px;
+  padding: 9px 14px;
+  background: var(--inv-soft-alt);
+}
+
+.inv-meta span {
+  color: #55705e;
+  font-size: 0.64rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.inv-meta strong {
+  color: var(--inv-ink);
+  font-size: 0.92rem;
+  font-weight: 800;
+}
+
+.inv-table {
+  width: calc(100% - 40px);
+  margin: 0 20px 18px;
+  border-collapse: collapse;
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.inv-table th {
+  background: var(--inv-green);
+  color: #fff;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.inv-table th,
+.inv-table td {
+  padding: 9px 12px;
+  border-bottom: 1px solid var(--inv-line);
+  text-align: left;
+}
+
+.inv-table tbody tr:nth-child(even) td {
+  background: var(--inv-soft-alt);
+}
+
+.inv-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.inv-table .inv-cell-ref {
+  width: 14%;
+  font-family: "Consolas", "SF Mono", monospace;
+  font-size: 0.76rem;
+  letter-spacing: 0.04em;
+}
+
+.inv-table .inv-cell-name {
+  width: 38%;
+}
+
+.inv-table .inv-cell-num {
+  width: 16%;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.inv-table .inv-cell-amount {
+  font-weight: 800;
+}
+
+.inv-summary {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.05fr);
+  align-items: stretch;
+  gap: 18px;
+  margin: 0 20px 16px;
+}
+
+.inv-thanks {
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  gap: 2px;
+  padding: 22px 18px;
+  border: 1px solid var(--inv-line);
+  border-radius: 12px;
+  background: var(--inv-soft);
+  text-align: center;
+}
+
+.inv-thanks strong {
+  color: var(--inv-green-deep);
+  font-family: var(--display-font);
+  font-size: 2rem;
+  font-style: italic;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.inv-thanks span {
+  color: var(--inv-green);
+  font-family: var(--display-font);
+  font-style: italic;
+  font-size: 0.95rem;
+}
+
+.inv-totals {
+  display: grid;
+  gap: 3px;
+}
+
+.inv-total-line {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 7px 14px;
+  border-radius: 6px;
+  background: var(--inv-soft);
+}
+
+.inv-total-line span {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.inv-total-line strong {
+  font-variant-numeric: tabular-nums;
+  font-weight: 800;
+}
+
+.inv-total-ttc,
+.inv-total-net {
+  background: var(--inv-green);
   color: #fff;
 }
 
-.invoice-grand-total span,
-.invoice-grand-total strong {
-  color: #fff;
-  font-size: 1.05rem;
+.inv-total-ttc span,
+.inv-total-ttc strong {
+  font-size: 0.95rem;
 }
 
-.invoice-signatures {
+.inv-total-net {
+  padding: 10px 14px;
+  background: var(--inv-green-deep);
+}
+
+.inv-total-net span,
+.inv-total-net strong {
+  font-size: 1.15rem;
+  letter-spacing: 0.04em;
+}
+
+.inv-closing {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 32px;
-  padding: 30px 24px 12px;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 14px 18px;
+  margin: 0 20px 18px;
 }
 
-.invoice-signature-block {
-  display: grid;
-  gap: 8px;
+.inv-tax {
+  align-self: start;
+  border-collapse: collapse;
+  width: 100%;
 }
 
-.invoice-signature-line {
-  display: block;
-  height: 42px;
-  border-bottom: 1px solid var(--text);
-}
-
-.invoice-signature-block small {
-  color: var(--muted);
-  font-size: 0.76rem;
-}
-
-.invoice-footer {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 14px 24px;
-  margin-top: 6px;
-  background: var(--panel-soft);
-  border-top: 1px solid var(--line);
-  color: var(--muted);
-  font-size: 0.76rem;
-}
-
-.invoice-footer div {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px 12px;
-}
-
-.invoice-footer div:last-child {
-  justify-content: flex-end;
+.inv-tax th,
+.inv-tax td {
+  padding: 6px 10px;
+  border: 1px solid var(--inv-line);
+  font-size: 0.7rem;
   text-align: right;
 }
 
-.invoice-footer strong {
-  color: var(--accent-strong);
+.inv-tax th:first-child,
+.inv-tax td:first-child {
+  text-align: left;
 }
 
-.invoice-footer span:last-child {
-  color: var(--accent-strong);
+.inv-tax th {
+  background: var(--inv-soft);
+  color: var(--inv-green-deep);
   font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.inv-settlement {
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  padding: 12px 14px;
+  border: 1px solid var(--inv-line);
+  border-radius: 10px;
+  background: var(--inv-soft-alt);
+}
+
+.inv-settlement div {
+  display: grid;
+  gap: 1px;
+}
+
+.inv-settlement span {
+  color: #55705e;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.inv-settlement strong {
+  color: var(--inv-ink);
+  font-size: 0.95rem;
+  font-weight: 800;
+}
+
+.inv-terms {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 6px;
+  padding: 11px 14px;
+  border-left: 3px solid var(--inv-green);
+  border-radius: 0 8px 8px 0;
+  background: var(--inv-soft-alt);
+}
+
+.inv-terms p {
+  margin: 0;
+  color: #3c5546;
+  font-size: 0.7rem;
+  line-height: 1.4;
+}
+
+.inv-strapline {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 13px 20px;
+  border-top: 4px solid var(--inv-orange);
+  background: var(--inv-green-deep);
+  color: #fff;
+  font-size: 0.86rem;
+  font-weight: 800;
+  letter-spacing: 0.2em;
+}
+
+/* The apple from the pad's foot, reduced to a disc and a leaf. */
+.inv-strapline-mark {
+  position: relative;
+  width: 17px;
+  height: 17px;
+  flex: none;
+  border-radius: 50%;
+  background: #fff;
+}
+
+.inv-strapline-mark::after {
+  content: '';
+  position: absolute;
+  top: -4px;
+  left: 9px;
+  width: 9px;
+  height: 6px;
+  border-radius: 0 60% 0 60%;
+  background: var(--inv-orange);
 }
 
 @media print {
@@ -2523,27 +2683,32 @@ textarea {
     width: 100%;
   }
 
-  .invoice-brand-header,
-  .invoice-parties,
-  .invoice-summary,
-  .invoice-signatures {
+  /* The green bands and the header strip are the document, not decoration:
+     without this the printer drops every filled background. */
+  .invoice-document,
+  .invoice-document * {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  .inv-legal-line,
+  .inv-head,
+  .inv-meta,
+  .inv-summary,
+  .inv-closing,
+  .inv-strapline {
     break-inside: avoid;
   }
 
-  .print-invoice-table {
-    width: calc(100% - 20mm);
-    margin: 0 10mm 18px;
-  }
-
-  .print-invoice-table thead {
+  .inv-table thead {
     display: table-header-group;
   }
 
-  .print-invoice-table tr {
+  .inv-table tr {
     break-inside: avoid;
   }
 
-  .invoice-footer {
+  .inv-strapline {
     position: relative;
   }
 }
@@ -3828,7 +3993,7 @@ body.is-loading .main-panel {
 
 /* --- Retour receipt ------------------------------------------------------- */
 .invoice-return-banner {
-  margin: 0 0 14px;
+  margin: 0 20px 14px;
   padding: 8px 14px;
   border: 2px solid var(--warning);
   border-radius: 10px;
@@ -3841,8 +4006,13 @@ body.is-loading .main-panel {
   text-align: center;
 }
 
-.invoice-return-document .invoice-grand-total {
-  color: #92400e;
+.invoice-return-document .inv-total-ttc,
+.invoice-return-document .inv-total-net {
+  background: #92400e;
+}
+
+.invoice-return-document .inv-strapline {
+  background: #92400e;
 }
 
 /* --- Dépenses -------------------------------------------------------------- */

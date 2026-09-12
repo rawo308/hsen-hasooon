@@ -1635,138 +1635,194 @@ function renderHistoryCustomerSuggestions() {
   renderSalesHistory();
 }
 
-function getSaleItemDisplay(item) {
-  return { name: item.productName || 'Article' };
+// The business identity printed on every invoice. It is the legal header from
+// the pre-printed pads, so it belongs to the company rather than to a setting;
+// anything the store settings do fill in still wins over these.
+const INVOICE_BUSINESS = {
+  legalName: 'ETS HH',
+  poBox: 'B.P. 285',
+  phone: '066.90.69.69',
+  city: 'Port-Gentil',
+  country: 'GABON',
+  region: 'Gabon',
+  site: 'Gabon - Port Gentil',
+  thanks: 'Merci pour votre confiance !',
+  strapline: 'DES FRUITS FRAIS TOUTE L’ANNÉE'
+};
+
+const INVOICE_TERMS = [
+  'Dans le cas où le paiement intégral n’interviendrait pas à la date prévue par les parties, le vendeur se réserve le droit de reprendre la chose livrée et de résoudre le contrat.',
+  'Nos marchandises ne sont ni reprises ni échangées passé un délai de 48 heures.'
+];
+
+function escapeHtml(value) {
+  return String(value ?? '').replace(/[&<>"']/g, (char) => (
+    { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]
+  ));
+}
+
+const invoiceAmountFormat = new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 0 });
+const invoiceQuantityFormat = new Intl.NumberFormat('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+// Cells carry bare numbers; the currency is named once, in the column header.
+const invoiceAmount = (value) => invoiceAmountFormat.format(Number(value || 0));
+
+// The catalogue has no SKU column, so a line's reference is the tail of the
+// product's own id: stable, unique, and it survives a rename.
+function invoiceReference(item) {
+  const id = item.productId || '';
+  return id ? id.slice(-4).toUpperCase() : '—';
 }
 
 function openReceipt(saleId) {
   const sale = state.sales.find((entry) => entry.id === saleId);
   if (!sale) return;
+
+  const settings = state.settings || {};
   const customer = getCustomerById(sale.customerId);
-  const invoiceBusiness = state.settings;
+  const returning = isReturn(sale);
+
   const subtotal = sale.items.reduce((sum, item) => sum + (item.subtotal ?? item.quantity * item.unitPrice), 0);
   const discount = Number(sale.discount || 0);
   const discountPercent = Number(sale.discountPercent || 0);
-  const paidAmount = getInvoicePaidAmount(sale);
-  const remainingBalance = getInvoiceRemainingAmount(sale);
-  const isFullyPaid = remainingBalance <= 0;
-  const paymentLabel = sale.paymentMethod === 'debt'
-    ? (sale.paymentType === 'partial' ? 'Paiement partiel' : 'Crédit')
-    : 'Espèces';
-  const returning = isReturn(sale);
+  const settled = returning ? 0 : getInvoicePaidAmount(sale);
+  const netToPay = returning ? 0 : getInvoiceRemainingAmount(sale);
+
+  const paymentLabel = returning
+    ? 'Retour de marchandise'
+    : sale.paymentMethod === 'debt'
+      ? (sale.paymentType === 'partial' ? 'Paiement partiel' : 'Crédit')
+      : 'Espèces';
+
   const invoiceNumber = `${returning ? 'RET' : 'INV'}-${sale.id.slice(-6).toUpperCase()}`;
   const saleDate = new Date(sale.createdAt);
-  const dateLabel = saleDate.toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' });
+  const shortDate = saleDate.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: '2-digit' });
   const timeLabel = saleDate.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
 
+  const storeName = settings.storeName || 'H.H Fruit';
+  const phone = settings.storePhone || INVOICE_BUSINESS.phone;
+  const site = settings.storeAddress || INVOICE_BUSINESS.site;
+  const thanks = settings.receiptFooter || INVOICE_BUSINESS.thanks;
+
   const itemRows = sale.items.map((item) => {
-    const { name } = getSaleItemDisplay(item);
     const lineTotal = item.subtotal ?? item.quantity * item.unitPrice;
-    const product = getProductById(item.productId);
-    const productImage = item.productImage || product?.image || '';
     return `
-      <tr>
-        <td class="invoice-product-cell">
-          ${productImage ? `<img src="${productImage}" alt="" />` : ''}
-          <span>${name}</span>
-        </td>
-        <td class="invoice-num-cell">${item.quantity}</td>
-        <td class="invoice-num-cell">${formatMoney(item.unitPrice)}</td>
-        <td class="invoice-num-cell">${formatMoney(lineTotal)}</td>
-      </tr>
-    `;
+          <tr>
+            <td class="inv-cell-ref">${escapeHtml(invoiceReference(item))}</td>
+            <td class="inv-cell-name">${escapeHtml(item.productName || 'Article')}</td>
+            <td class="inv-cell-num">${invoiceQuantityFormat.format(Number(item.quantity || 0))}</td>
+            <td class="inv-cell-num">${invoiceAmount(item.unitPrice)}</td>
+            <td class="inv-cell-num inv-cell-amount">${invoiceAmount(lineTotal)}</td>
+          </tr>`;
   }).join('');
+
+  // A return has no tender, so the payment lines become the returned amount.
+  const totalsRows = returning
+    ? `
+          <div class="inv-total-line"><span>TOTAL HT</span><strong>${invoiceAmount(subtotal)}</strong></div>
+          <div class="inv-total-line"><span>TOTAL REMISE</span><strong>${invoiceAmount(discount)}</strong></div>
+          <div class="inv-total-line inv-total-ttc"><span>TOTAL TTC</span><strong>${invoiceAmount(sale.totalAmount)}</strong></div>
+          <div class="inv-total-line inv-total-net"><span>MONTANT DU RETOUR</span><strong>${invoiceAmount(sale.totalAmount)}</strong></div>`
+    : `
+          <div class="inv-total-line"><span>TOTAL HT</span><strong>${invoiceAmount(subtotal)}</strong></div>
+          <div class="inv-total-line"><span>TOTAL REMISE${discountPercent > 0 ? ` (${invoiceAmount(discountPercent)} %)` : ''}</span><strong>${invoiceAmount(discount)}</strong></div>
+          <div class="inv-total-line inv-total-ttc"><span>TOTAL TTC</span><strong>${invoiceAmount(sale.totalAmount)}</strong></div>
+          <div class="inv-total-line"><span>RÈGLEMENT</span><strong>${invoiceAmount(settled)}</strong></div>
+          <div class="inv-total-line inv-total-net"><span>NET À PAYER</span><strong>${invoiceAmount(netToPay)}</strong></div>`;
 
   document.getElementById('receipt-content').innerHTML = `
     <div class="invoice-document${returning ? ' invoice-return-document' : ''}">
-      ${returning ? '<p class="invoice-return-banner">RETOUR</p>' : ''}
-      <header class="invoice-brand-header">
-        <img src="/pics/logo.png" alt="Logo H.H Fruit" />
-        <div>
-          <strong>${invoiceBusiness.storeName || 'H.H Fruit'}</strong>
-          <span>${invoiceBusiness.storeAddress}</span>
-          <span>${invoiceBusiness.storePhone} &middot; ${invoiceBusiness.storeEmail}</span>
+      <p class="inv-legal-line">
+        <strong>${escapeHtml(INVOICE_BUSINESS.legalName)}</strong>
+        <span>${escapeHtml(INVOICE_BUSINESS.poBox)}</span>
+        <span>TÉL. : ${escapeHtml(phone)}</span>
+        <span>${escapeHtml(INVOICE_BUSINESS.city)} ${escapeHtml(INVOICE_BUSINESS.country)}</span>
+      </p>
+
+      <header class="inv-head">
+        <div class="inv-brand">
+          <img src="/pics/logo.png" alt="Logo ${escapeHtml(storeName)}" />
         </div>
-        <div class="invoice-number">
-          <span>${returning ? 'Reçu de retour' : 'Facture / Reçu'}</span>
-          <strong>${invoiceNumber}</strong>
-          <small>${dateLabel}</small>
-          <small>${timeLabel}</small>
+
+        <div class="inv-place">
+          <span class="inv-pin" aria-hidden="true"></span>
+          <div>
+            <strong>${escapeHtml(INVOICE_BUSINESS.region)}</strong>
+            <strong>${escapeHtml(INVOICE_BUSINESS.city)}</strong>
+          </div>
+        </div>
+
+        <div class="inv-client">
+          <div class="inv-client-row">
+            <span>CODE CLIENT :</span>
+            <b>${customer ? escapeHtml(customer.id.slice(-6).toUpperCase()) : ''}</b>
+          </div>
+          <div class="inv-client-row">
+            <span>CLIENT :</span>
+            <b>${customer ? escapeHtml(customer.name) : 'Client de passage'}</b>
+          </div>
+          <div class="inv-client-row">
+            <span>SITE :</span>
+            <b>${escapeHtml(site)}</b>
+          </div>
         </div>
       </header>
 
-      <section class="invoice-parties">
-        <div>
-          <span>Informations client</span>
-          <strong>${customer ? customer.name : 'Client de passage'}</strong>
-          ${customer?.phone ? `<small>${customer.phone}</small>` : ''}
-          ${customer?.address ? `<small>${customer.address}</small>` : ''}
-        </div>
-        <div>
-          <span>${returning ? 'Détails du retour' : 'Détails de la vente'}</span>
-          <small>${returning ? 'Retour' : 'Facture'} n° ${invoiceNumber}</small>
-          <small>Date : ${dateLabel}</small>
-          <small>Heure : ${timeLabel}</small>
-          <small>${returning ? 'Retour de marchandise' : `Vente ${paymentLabel.toLowerCase()}`}</small>
-        </div>
-      </section>
+      ${returning ? '<p class="invoice-return-banner">RETOUR</p>' : ''}
 
-      <table class="print-invoice-table">
+      <div class="inv-meta">
+        <div><span>DATE</span><strong>${escapeHtml(shortDate)}</strong></div>
+        <div><span>${returning ? 'N° RETOUR' : 'N° FACTURE'}</span><strong>${escapeHtml(invoiceNumber)}</strong></div>
+        <div><span>HEURE</span><strong>${escapeHtml(timeLabel)}</strong></div>
+      </div>
+
+      <table class="inv-table">
         <thead>
           <tr>
-            <th>Produit</th>
-            <th>Quantité</th>
-            <th>Prix unitaire (F CFA)</th>
-            <th>Total (F CFA)</th>
+            <th class="inv-cell-ref">RÉFÉRENCE</th>
+            <th class="inv-cell-name">DÉSIGNATION</th>
+            <th class="inv-cell-num">QTÉ</th>
+            <th class="inv-cell-num">PRIX U. TTC</th>
+            <th class="inv-cell-num">MONTANT</th>
           </tr>
         </thead>
         <tbody>${itemRows}</tbody>
       </table>
 
-      <section class="invoice-summary">
-        ${returning
-      ? `<div class="invoice-payment-box">
-          <strong>Retour</strong>
-          <div><span>Type</span><strong>Retour de marchandise</strong></div>
-          <div><span>Articles retournés</span><strong>${sale.items.reduce((sum, item) => sum + Number(item.quantity || 0), 0)}</strong></div>
-        </div>`
-      : `<div class="invoice-payment-box">
-          <strong>Paiement</strong>
-          <div><span>Montant payé</span><strong>${formatMoney(paidAmount)}</strong></div>
-          <div><span>Mode de paiement</span><strong>${paymentLabel}</strong></div>
-          ${!isFullyPaid ? `<div><span>Reste à payer</span><strong class="invoice-balance-due">${formatMoney(remainingBalance)}</strong></div>` : ''}
-        </div>`}
-        <div class="invoice-total-box">
-          <div><span>Sous-total</span><strong>${formatMoney(subtotal)}</strong></div>
-          ${discount > 0 ? `<div><span>Remise (${discountPercent} %)</span><strong>-${formatMoney(discount)}</strong></div>` : ''}
-          <div class="invoice-grand-total"><span>${returning ? 'Total du retour' : 'Total'}</span><strong>${formatMoney(sale.totalAmount)}</strong></div>
+      <section class="inv-summary">
+        <div class="inv-thanks">
+          <strong>Merci</strong>
+          <span>${escapeHtml(thanks.replace(/^Merci\s*/i, '')) || 'pour votre confiance !'}</span>
+        </div>
+        <div class="inv-totals">${totalsRows}</div>
+      </section>
+
+      <section class="inv-closing">
+        <table class="inv-tax">
+          <thead>
+            <tr><th>CODE</th><th>BASE</th><th>TAUX</th><th>MONTANT</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>Total</td><td>0</td><td>0</td><td>0</td></tr>
+          </tbody>
+        </table>
+
+        <div class="inv-settlement">
+          <div><span>Échéance :</span><strong>${escapeHtml(shortDate)}</strong></div>
+          <div><span>Mode de règlement :</span><strong>${escapeHtml(paymentLabel)}</strong></div>
+        </div>
+
+        <div class="inv-terms">
+          ${INVOICE_TERMS.map((line) => `<p>${escapeHtml(line)}</p>`).join('')}
         </div>
       </section>
 
-      <section class="invoice-signatures">
-        <div class="invoice-signature-block">
-          <span class="invoice-signature-line"></span>
-          <small>Signature du client</small>
-        </div>
-        <div class="invoice-signature-block">
-          <span class="invoice-signature-line"></span>
-          <small>Signature autorisée</small>
-        </div>
-      </section>
-
-      <footer class="invoice-footer">
-        <div>
-          <strong>${invoiceBusiness.receiptFooter}</strong>
-          <span>${invoiceBusiness.countryOfOrigin}</span>
-        </div>
-        <div>
-          <span>${invoiceBusiness.storeAddress}</span>
-            <span>${invoiceBusiness.storePhone}</span>
-            <span>${invoiceBusiness.storeEmail}</span>
-        </div>
+      <footer class="inv-strapline">
+        <span class="inv-strapline-mark" aria-hidden="true"></span>
+        <span>${escapeHtml(INVOICE_BUSINESS.strapline)}</span>
       </footer>
     </div>
   `;
+
   const printButton = document.getElementById('print-receipt-btn');
   if (printButton) printButton.textContent = returning ? 'Imprimer le reçu' : 'Imprimer la facture';
   document.getElementById('receipt-modal').classList.remove('hidden');
