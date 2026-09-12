@@ -43,7 +43,11 @@ button {
   cursor: pointer;
 }
 
-h1, h2, h3, h4, p {
+h1,
+h2,
+h3,
+h4,
+p {
   margin-top: 0;
 }
 
@@ -993,7 +997,7 @@ button:disabled {
   white-space: nowrap;
 }
 
-.history-actions .link-btn + .link-btn {
+.history-actions .link-btn+.link-btn {
   margin-left: 12px;
 }
 
@@ -1035,7 +1039,7 @@ textarea {
   gap: 12px;
 }
 
-.stack-form > label {
+.stack-form>label {
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -1044,7 +1048,7 @@ textarea {
   font-weight: 700;
 }
 
-.stack-form > label .subtle {
+.stack-form>label .subtle {
   font-size: inherit;
   font-weight: inherit;
 }
@@ -1072,7 +1076,7 @@ textarea {
   gap: 12px;
 }
 
-.editor-section-heading > div {
+.editor-section-heading>div {
   display: flex;
   align-items: baseline;
   gap: 9px;
@@ -1117,7 +1121,7 @@ textarea {
   grid-template-columns: 1fr 1fr;
 }
 
-.editor-section > label,
+.editor-section>label,
 .editor-fields label {
   display: flex;
   flex-direction: column;
@@ -1315,6 +1319,30 @@ textarea {
   letter-spacing: -0.03em;
 }
 
+.checkout-discount-row strong {
+  color: var(--accent);
+}
+
+.sale-discount-field {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 10px;
+  color: var(--muted);
+  font-size: 0.86rem;
+}
+
+.sale-discount-field input {
+  width: 86px;
+  padding: 7px 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+  text-align: right;
+}
+
 .empty-cart {
   display: grid;
   place-items: center;
@@ -1456,7 +1484,7 @@ textarea {
   border-bottom: 1px solid var(--line);
 }
 
-.profile-header > .balance-box {
+.profile-header>.balance-box {
   margin-left: auto;
 }
 
@@ -2265,7 +2293,7 @@ textarea {
   padding: 18px 24px;
 }
 
-.invoice-parties > div {
+.invoice-parties>div {
   display: grid;
   gap: 4px;
   padding: 14px 16px;
@@ -2533,6 +2561,7 @@ textarea {
     height: 260px;
     grid-template-columns: 1fr;
   }
+
   .stats-grid,
   .grid-two,
   .pos-layout,
@@ -2680,7 +2709,7 @@ textarea {
     grid-area: metric2;
   }
 
-  .product-row-metric + .product-row-metric {
+  .product-row-metric+.product-row-metric {
     margin-top: 8px;
   }
 
@@ -2767,6 +2796,7 @@ textarea {
     border: 2px solid var(--accent-soft);
     border-radius: 999px;
   }
+
   .cart-row {
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   }
@@ -2959,6 +2989,7 @@ textarea {
 
 .ledger-entity-stats {
   display: flex;
+  align-items: stretch;
   gap: 28px;
   text-align: right;
 }
@@ -2968,12 +2999,116 @@ textarea {
   gap: 4px;
 }
 
+.customer-side-stat {
+  display: grid;
+  align-content: center;
+  gap: 4px;
+  min-width: 150px;
+  padding: 4px 0;
+}
+
+.customer-side-stat span {
+  color: var(--muted);
+  font-size: 0.74rem;
+}
+
 .ledger-entity-stats strong {
   font-size: 1.15rem;
 }
 
 .ledger-section-heading {
   margin: 22px 0 8px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.ledger-history-filter-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.ledger-history-filter-wrap>span {
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.customer-summary-card {
+  position: relative;
+  display: grid;
+  gap: 6px;
+  min-width: 150px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  text-align: right;
+}
+
+.customer-summary-header {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  color: var(--muted);
+  font-size: 0.76rem;
+}
+
+.customer-summary-total {
+  display: block;
+  font-size: 1.8rem;
+  letter-spacing: -0.04em;
+  line-height: 1.1;
+}
+
+.calendar-icon-btn {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--accent-line);
+  border-radius: 8px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  padding: 0;
+  font-size: 0.9rem;
+}
+
+.compact-date-popover {
+  position: absolute;
+  z-index: 10;
+  right: 0;
+  top: calc(100% + 10px);
+  min-width: 240px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel);
+  box-shadow: var(--shadow);
+}
+
+.compact-date-picker-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.compact-date-picker-grid label {
+  display: grid;
+  gap: 4px;
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+.compact-date-picker-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
 }
 
 .ledger-section-heading h4,
@@ -3178,8 +3313,8 @@ textarea {
 }
 
 /* A destructive action must never sit flush against the one beside it. */
-.link-btn + .link-btn,
-.secondary-btn + .link-btn {
+.link-btn+.link-btn,
+.secondary-btn+.link-btn {
   margin-left: 14px;
 }
 
@@ -3210,9 +3345,17 @@ textarea {
   box-shadow: 0 12px 30px rgba(0, 0, 0, 0.22);
 }
 
-.save-status-saving { background: #4a4a4a; }
-.save-status-saved { background: #1f7a4d; }
-.save-status-error { background: var(--danger); }
+.save-status-saving {
+  background: #4a4a4a;
+}
+
+.save-status-saved {
+  background: #1f7a4d;
+}
+
+.save-status-error {
+  background: var(--danger);
+}
 
 /* --- login ---------------------------------------------------------------- */
 
@@ -3299,6 +3442,7 @@ body.is-loading .main-panel {
 /* --- mobile --------------------------------------------------------------- */
 
 @media (max-width: 980px) {
+
   /* The header used to consume 550px of an 844px screen. It is now a compact
      sticky bar with a horizontally scrollable nav. */
   .sidebar {
@@ -3314,16 +3458,26 @@ body.is-loading .main-panel {
     align-items: center;
     gap: 8px 10px;
     padding:
-      calc(8px + env(safe-area-inset-top, 0px))
-      calc(12px + env(safe-area-inset-right, 0px))
-      8px
-      calc(12px + env(safe-area-inset-left, 0px));
+      calc(8px + env(safe-area-inset-top, 0px)) calc(12px + env(safe-area-inset-right, 0px)) 8px calc(12px + env(safe-area-inset-left, 0px));
   }
 
-  .brand-block { grid-area: brand; gap: 10px; }
-  .brand-block h1 { font-size: 1.05rem; }
-  .brand-block p { display: none; }
-  .brand-logo { width: 34px; height: 34px; }
+  .brand-block {
+    grid-area: brand;
+    gap: 10px;
+  }
+
+  .brand-block h1 {
+    font-size: 1.05rem;
+  }
+
+  .brand-block p {
+    display: none;
+  }
+
+  .brand-logo {
+    width: 34px;
+    height: 34px;
+  }
 
   .logout-btn {
     grid-area: logout;
@@ -3341,7 +3495,9 @@ body.is-loading .main-panel {
     -webkit-overflow-scrolling: touch;
   }
 
-  .nav-menu::-webkit-scrollbar { display: none; }
+  .nav-menu::-webkit-scrollbar {
+    display: none;
+  }
 
   .nav-btn {
     flex: 0 0 auto;
@@ -3375,9 +3531,19 @@ body.is-loading .main-panel {
     align-items: center;
   }
 
-  .ledger-primary { grid-area: primary; min-width: 0; }
-  .ledger-money { grid-area: money; }
-  .ledger-arrow { grid-area: arrow; align-self: center; }
+  .ledger-primary {
+    grid-area: primary;
+    min-width: 0;
+  }
+
+  .ledger-money {
+    grid-area: money;
+  }
+
+  .ledger-arrow {
+    grid-area: arrow;
+    align-self: center;
+  }
 
   .ledger-count {
     display: flex;
@@ -3394,7 +3560,7 @@ body.is-loading .main-panel {
     flex-direction: column;
   }
 
-  .filter-row > * {
+  .filter-row>* {
     width: 100%;
   }
 
@@ -3437,6 +3603,7 @@ body.is-loading .main-panel {
 }
 
 @media (max-width: 760px) {
+
   /* .filter-row is a 3-column grid with a 180px minimum, which forced 564px of
      content into a 362px viewport. flex-direction could never have fixed it. */
   .filter-row {
@@ -3452,6 +3619,7 @@ body.is-loading .main-panel {
 }
 
 @media (max-width: 980px) {
+
   /* The base .nav-menu is a vertical column for the desktop sidebar; without
      this the six buttons stayed stacked and the header was still 380px tall. */
   .nav-menu {
@@ -3461,6 +3629,7 @@ body.is-loading .main-panel {
 }
 
 @media (max-width: 760px) {
+
   /* On the register screen every pixel above the catalogue costs a scroll. */
   .pos-page-header .page-subtitle,
   .pos-page-header .sale-status {
@@ -3477,6 +3646,7 @@ body.is-loading .main-panel {
 }
 
 @media (max-width: 980px) {
+
   /* As a column flex container .app-shell stopped growing at 1654px while the
      page ran to 3498px, so the sticky header detached partway down. */
   .app-shell {
@@ -3515,6 +3685,7 @@ body.is-loading .main-panel {
 }
 
 @media (max-width: 480px) {
+
   /* Two columns leave ~140px per card, which is narrower than a single
      "LIQUIDE VAISSELLE GRENADE 650ML x12" word run can wrap into. */
   .catalog-list {
@@ -3699,7 +3870,7 @@ body.is-loading .main-panel {
   min-width: 0;
 }
 
-.expense-filter-field > span {
+.expense-filter-field>span {
   color: var(--muted);
   font-size: 0.75rem;
   font-weight: 700;
@@ -3835,6 +4006,7 @@ body.is-loading .main-panel {
 }
 
 @media (max-width: 600px) {
+
   /* Four columns cannot share a phone screen without breaking words mid-syllable,
      so each expense becomes a stacked row instead: type and date on the left,
      amount aligned right, actions on their own line. No sideways scrolling. */

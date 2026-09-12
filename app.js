@@ -24,15 +24,15 @@ let selectedDebtInvoiceId = null;
 let selectedPosCustomerId = null;
 let editingProductId = null;
 let editingCustomerId = null;
+let customerPurchaseRange = '30d';
+let customerPurchaseCustomRange = { start: '', end: '' };
+let customerPurchaseSummaryFilter = { mode: 'all', start: '', end: '' };
+let customerTransactionHistoryFilter = { mode: 'all', start: '', end: '' };
 let incomeRange = { mode: 'today' };
+let saleDiscountPercent = 0;
 // 'sale' keeps the original checkout untouched; 'return' records an independent
 // Retour transaction that puts stock back.
 let posMode = 'sale';
-
-// Writes are serialised: a save requested while one is in flight is coalesced into a
-// single follow-up so the last state always reaches the server exactly once.
-let saveInFlight = false;
-let savePending = false;
 
 function setSaveStatus(status, message) {
   const element = document.getElementById('save-status');
@@ -46,92 +46,94 @@ function setSaveStatus(status, message) {
   }
 }
 
-function saveState() {
-  normalizeFinancials();
-  return persistStateToServer();
+// --- server API ------------------------------------------------------------
+
+class ApiError extends Error {
+  constructor(status, message) {
+    super(message);
+    this.status = status;
+  }
 }
 
-// Resolves true only when the server confirmed the write. Callers must not report
-// success to the user before this resolves.
-async function persistStateToServer() {
-  if (saveInFlight) {
-    savePending = true;
-    return false;
+// One place for the request shape and the error shape, so no caller has to
+// reason about response codes. A status of 0 means the server was unreachable.
+async function api(path, method = 'GET', body = null) {
+  let response;
+  try {
+    response = await fetch(`${API_BASE}/api${path}`, {
+      method,
+      credentials: 'same-origin',
+      headers: body ? { 'Content-Type': 'application/json' } : undefined,
+      body: body ? JSON.stringify(body) : undefined
+    });
+  } catch (error) {
+    throw new ApiError(0, 'connexion au serveur impossible.');
   }
 
-  saveInFlight = true;
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) throw new ApiError(response.status, payload.error || `erreur ${response.status}.`);
+  return payload;
+}
+
+function upsert(collection, record) {
+  const index = collection.findIndex((entry) => entry.id === record.id);
+  if (index === -1) collection.push(record);
+  else collection[index] = record;
+}
+
+// A write only returns the records it touched. Folding them back in keeps the
+// browser's copy identical to the database without a second round trip, and
+// without the browser ever recomputing a balance the database already derived.
+function applyPatch(payload) {
+  if (payload.settings) state.settings = payload.settings;
+  if (payload.product) upsert(state.products, payload.product);
+  if (payload.customer) upsert(state.customers, payload.customer);
+  if (payload.sale) upsert(state.sales, payload.sale);
+  if (payload.expense) upsert(state.expenses, payload.expense);
+  (payload.products || []).forEach((product) => upsert(state.products, product));
+}
+
+// Every write goes through here. Resolves null when nothing was written, so a
+// caller must never tell the operator an action succeeded without checking.
+async function mutate(path, method, body = null, applyLocal = null) {
   setSaveStatus('saving');
-
   try {
-    const response = await fetch(`${API_BASE}/api/state`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      credentials: 'same-origin',
-      body: JSON.stringify({ state })
-    });
-
-    if (response.status === 401) {
+    const payload = await api(path, method, body);
+    if (applyLocal) applyLocal(payload);
+    applyPatch(payload);
+    renderAll();
+    setSaveStatus('saved');
+    return payload;
+  } catch (error) {
+    if (error.status === 401) {
       showLogin('Session expirée. Reconnectez-vous pour enregistrer.');
       setSaveStatus('error', 'Non enregistré : session expirée.');
-      return false;
+    } else {
+      setSaveStatus('error', `Non enregistré : ${error.message}`);
     }
-
-    if (!response.ok) {
-      const payload = await response.json().catch(() => ({}));
-      setSaveStatus('error', payload.error || `Non enregistré (erreur ${response.status}).`);
-      return false;
-    }
-
-    setSaveStatus('saved');
-    return true;
-  } catch (error) {
-    setSaveStatus('error', 'Non enregistré : connexion au serveur impossible.');
-    return false;
-  } finally {
-    saveInFlight = false;
-    if (savePending) {
-      savePending = false;
-      persistStateToServer();
-    }
+    return null;
   }
 }
 
-async function syncStateFromServer() {
+// The one read the app makes on load.
+async function hydrate() {
   try {
-    const response = await fetch(`${API_BASE}/api/state`, { credentials: 'same-origin' });
-
-    if (response.status === 401) {
-      showLogin();
-      return;
-    }
-    if (response.status === 404) {
-      hideLogin();
-      await persistStateToServer();
-      setAppLoading(false);
-      return;
-    }
-    if (!response.ok) {
-      setAppLoading(false);
-      setSaveStatus('error', 'Chargement des données impossible.');
-      return;
-    }
-
-    const payload = await response.json();
-    if (!payload.state) {
-      setAppLoading(false);
-      return;
-    }
-
+    const payload = await api('/state');
     hideLogin();
     Object.keys(state).forEach((key) => delete state[key]);
     Object.assign(state, payload.state);
     ensureStateShape();
-    normalizeFinancials();
     renderAll();
-    setAppLoading(false);
   } catch (error) {
+    if (error.status === 401) {
+      showLogin();
+      return;
+    }
+    setSaveStatus('error', error.status === 0
+      ? 'Connexion au serveur impossible.'
+      : 'Chargement des données impossible.');
+  } finally {
     setAppLoading(false);
-    setSaveStatus('error', 'Connexion au serveur impossible.');
   }
 }
 
@@ -191,7 +193,7 @@ async function handleLogin(event) {
     document.getElementById('login-password').value = '';
     hideLogin();
     setAppLoading(true);
-    await syncStateFromServer();
+    await hydrate();
   } catch (requestError) {
     if (error) {
       error.textContent = 'Serveur injoignable.';
@@ -241,6 +243,91 @@ function getCustomerById(customerId) {
   return state.customers.find((customer) => customer.id === customerId) || null;
 }
 
+function getCustomerPurchaseStart(range) {
+  const start = new Date();
+  start.setHours(0, 0, 0, 0);
+  start.setDate(start.getDate() - (range === 'today' ? 0 : range === '7d' ? 6 : 29));
+  return start;
+}
+
+function getCustomerPurchaseRangeBounds(range) {
+  if (range === 'custom') {
+    const startValue = customerPurchaseCustomRange.start;
+    const endValue = customerPurchaseCustomRange.end;
+    if (!startValue || !endValue) {
+      return { start: null, end: null };
+    }
+    const start = getStartOfDay(new Date(startValue));
+    const end = new Date(endValue);
+    end.setHours(23, 59, 59, 999);
+    return { start, end };
+  }
+  const start = getCustomerPurchaseStart(range);
+  const end = new Date();
+  return { start, end };
+}
+
+function getCustomerPurchasesForRange(customerId, range) {
+  const { start, end } = getCustomerPurchaseRangeBounds(range);
+  if (!start || !end) return [];
+  return state.sales
+    .filter((sale) => sale.customerId === customerId && !isReturn(sale))
+    .filter((sale) => {
+      const date = new Date(sale.createdAt);
+      return date >= start && date <= end;
+    });
+}
+
+function getDateFilterMode(startValue, endValue) {
+  if (!startValue && !endValue) return 'all';
+  if (startValue && endValue && startValue !== endValue) return 'range';
+  return 'day';
+}
+
+function matchesDateRangeFilter(createdAt, filter) {
+  if (!filter || filter.mode === 'all') return true;
+  const date = new Date(createdAt);
+  if (!date || Number.isNaN(date.getTime())) return false;
+  const start = filter.start ? getStartOfDay(new Date(filter.start)) : null;
+  const end = filter.end ? new Date(filter.end) : null;
+  if (end) end.setHours(23, 59, 59, 999);
+  if (filter.mode === 'day') {
+    const day = getStartOfDay(new Date(filter.start || filter.end));
+    return getStartOfDay(date).getTime() === day.getTime();
+  }
+  if (start && end) return date >= start && date <= end;
+  if (start) return date >= start;
+  if (end) return date <= end;
+  return true;
+}
+
+function getCustomerPurchaseTotalForFilter(customerId, filter) {
+  return state.sales
+    .filter((sale) => sale.customerId === customerId && !isReturn(sale))
+    .filter((sale) => matchesDateRangeFilter(sale.createdAt, filter))
+    .reduce((sum, sale) => sum + Number(sale.totalAmount || 0), 0);
+}
+
+function getCustomerTransactionHistoryForFilter(customerId, filter) {
+  return [...state.sales.filter((sale) => sale.customerId === customerId)]
+    .filter((sale) => matchesDateRangeFilter(sale.createdAt, filter))
+    .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+}
+
+function getDateFilterSummary(filter) {
+  if (!filter || filter.mode === 'all') return 'Toute la période';
+  if (filter.mode === 'day') {
+    const value = filter.start || filter.end;
+    return value ? new Date(value).toLocaleDateString('fr-FR') : 'Jour sélectionné';
+  }
+  if (filter.start && filter.end) {
+    return `${new Date(filter.start).toLocaleDateString('fr-FR')} → ${new Date(filter.end).toLocaleDateString('fr-FR')}`;
+  }
+  if (filter.start) return `Depuis ${new Date(filter.start).toLocaleDateString('fr-FR')}`;
+  if (filter.end) return `Jusqu’au ${new Date(filter.end).toLocaleDateString('fr-FR')}`;
+  return 'Période sélectionnée';
+}
+
 function getProductById(productId) {
   return state.products.find((product) => product.id === productId) || null;
 }
@@ -255,20 +342,17 @@ function isReturn(transaction) {
   return getTransactionType(transaction) === 'return';
 }
 
-// A saved blob only contains the keys that existed when it was written, and
-// syncStateFromServer drops every key before assigning it, so anything newer
-// than the stored state would otherwise be undefined.
+// hydrate drops every key before assigning, so a collection the server did not
+// send would otherwise be undefined mid-render.
 function ensureStateShape() {
   if (!state.settings || typeof state.settings !== 'object') state.settings = structuredClone(emptyState.settings);
   if (!Array.isArray(state.products)) state.products = [];
   if (!Array.isArray(state.customers)) state.customers = [];
   if (!Array.isArray(state.sales)) state.sales = [];
   if (!Array.isArray(state.expenses)) state.expenses = [];
-
-  // Cost price is no longer part of a product; shed it from legacy records.
-  state.products.forEach((product) => { delete product.costPrice; });
-  state.sales.forEach((transaction) => { transaction.type = getTransactionType(transaction); });
-  state.expenses.forEach((expense) => { expense.amount = Number(expense.amount) || 0; });
+  state.customers.forEach((customer) => {
+    if (!Array.isArray(customer.debtHistory)) customer.debtHistory = [];
+  });
 }
 
 function getInvoicePaidAmount(sale) {
@@ -309,41 +393,9 @@ function getCustomerCreditInvoices(customerId, outstandingOnly = false) {
     .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 }
 
-function normalizeFinancials() {
-  ensureStateShape();
-  state.customers.forEach((customer) => {
-    customer.debtHistory = Array.isArray(customer.debtHistory) ? customer.debtHistory : [];
-    const invoices = getCustomerCreditInvoices(customer.id);
-    const legacyPayments = customer.debtHistory.filter((entry) => entry.type === 'payment' && !entry.saleId && Number(entry.amount) > 0);
-
-    legacyPayments.forEach((payment) => {
-      let remainingPayment = Number(payment.amount);
-      invoices.slice().reverse().forEach((invoice) => {
-        const available = getInvoiceRemainingAmount(invoice);
-        const applied = Math.min(available, remainingPayment);
-        if (!applied) return;
-        invoice.amountPaid = getInvoicePaidAmount(invoice) + applied;
-        remainingPayment -= applied;
-        if (!payment.saleId) payment.saleId = invoice.id;
-      });
-    });
-
-    invoices.forEach((invoice) => {
-      invoice.status = getInvoiceStatus(invoice);
-    });
-
-    const cashPaid = state.sales
-      .filter((sale) => sale.customerId === customer.id && !isReturn(sale) && sale.paymentMethod === 'cash')
-      .reduce((sum, sale) => sum + Number(sale.totalAmount || 0), 0);
-    // Returns are standalone records: they never move a customer's purchases,
-    // payments or balance.
-    customer.totalPurchased = state.sales
-      .filter((sale) => sale.customerId === customer.id && !isReturn(sale))
-      .reduce((sum, sale) => sum + Number(sale.totalAmount || 0), 0);
-    customer.totalPaid = cashPaid + invoices.reduce((sum, sale) => sum + getInvoicePaidAmount(sale), 0);
-    customer.balance = invoices.reduce((sum, sale) => sum + getInvoiceRemainingAmount(sale), 0);
-  });
-}
+// Customer balances, invoice paid amounts and statuses used to be recomputed here
+// on every load and every save. The database derives them now (customer_totals /
+// sale_payments), so the browser only ever displays what the server sent.
 
 function getAvailableStock(product) {
   return product?.stock || 0;
@@ -414,7 +466,6 @@ function getCartTotal() {
 }
 
 function getOutstandingDebtList() {
-  normalizeFinancials();
   return state.customers
     .filter((customer) => customer.balance > 0)
     .sort((a, b) => b.balance - a.balance);
@@ -440,9 +491,6 @@ function renderNav() {
 }
 
 function renderDashboard() {
-  // Balances are derived, so recompute before reading them into Total dû.
-  normalizeFinancials();
-
   const lowStock = state.products.filter((product) => product.stock <= getLowStockThreshold(product)).map((product) => ({ ...product, productName: product.name }));
   // Each customer balance is the sum of what is still unpaid on their credit
   // invoices, so settled invoices drop out on their own.
@@ -468,8 +516,8 @@ function renderDashboard() {
 
   const recentHtml = recentSales.length
     ? recentSales.map((sale) => {
-        const customer = getCustomerById(sale.customerId);
-        return `
+      const customer = getCustomerById(sale.customerId);
+      return `
           <div class="list-item">
             <div>
               <strong>${customer ? customer.name : 'Client de passage'}</strong>
@@ -481,7 +529,7 @@ function renderDashboard() {
             </div>
           </div>
         `;
-      }).join('')
+    }).join('')
     : `<p class="empty-state">${emptyLabel}</p>`;
 
   document.getElementById('recent-sales-list').innerHTML = recentHtml;
@@ -584,6 +632,7 @@ function applyPosMode() {
   text('pos-customer-section-title', returning ? 'Client (facultatif)' : 'Client et paiement');
 
   document.getElementById('pos-payment-fields')?.classList.toggle('hidden', returning);
+  document.getElementById('sale-discount-field')?.classList.toggle('hidden', returning);
   document.getElementById('pos-return-note')?.classList.toggle('hidden', !returning);
   if (returning) document.getElementById('partial-payment-field')?.classList.add('hidden');
 }
@@ -643,6 +692,7 @@ function renderCart() {
       ? '<div class="empty-cart"><span class="empty-cart-icon">&#8630;</span><strong>Votre retour est vide</strong><p>Ajoutez les produits retournés pour commencer.</p></div>'
       : '<div class="empty-cart"><span class="empty-cart-icon">+</span><strong>Votre vente est vide</strong><p>Ajoutez des produits au catalogue pour commencer.</p></div>';
     document.getElementById('subtotal-value').textContent = formatMoney(0);
+    document.getElementById('checkout-discount-value').textContent = formatMoney(0);
     document.getElementById('total-value').textContent = formatMoney(0);
     return;
   }
@@ -696,8 +746,11 @@ function renderCart() {
   });
 
   const subtotal = getCartTotal();
+  const discountPercent = isReturnMode() ? 0 : saleDiscountPercent;
+  const discount = subtotal * discountPercent / 100;
   document.getElementById('subtotal-value').textContent = formatMoney(subtotal);
-  document.getElementById('total-value').textContent = formatMoney(subtotal);
+  document.getElementById('checkout-discount-value').textContent = discount > 0 ? `-${formatMoney(discount)}` : formatMoney(0);
+  document.getElementById('total-value').textContent = formatMoney(subtotal - discount);
 }
 
 function renderCustomerSelects() {
@@ -730,10 +783,10 @@ function renderPaymentInvoiceSummary() {
   const summary = document.getElementById('payment-invoice-summary');
   if (!summary) return;
   summary.innerHTML = invoice
-     ? `<div><span>Total de la facture</span><strong>${formatMoney(invoice.totalAmount)}</strong></div>
+    ? `<div><span>Total de la facture</span><strong>${formatMoney(invoice.totalAmount)}</strong></div>
        <div><span>Montant payé</span><strong>${formatMoney(getInvoicePaidAmount(invoice))}</strong></div>
        <div><span>Reste à payer</span><strong>${formatMoney(getInvoiceRemainingAmount(invoice))}</strong></div>`
-     : '<p class="empty-state">Sélectionnez un client ayant une facture impayée.</p>';
+    : '<p class="empty-state">Sélectionnez un client ayant une facture impayée.</p>';
 }
 
 function renderPosCustomerField() {
@@ -789,10 +842,10 @@ function renderProductsList() {
 
   listEl.innerHTML = productList.length
     ? productList.map((product) => {
-        const stock = product.stock;
-        const threshold = getLowStockThreshold(product);
-        const stockState = stock === 0 ? 'out' : stock <= threshold ? 'low' : 'healthy';
-        return `
+      const stock = product.stock;
+      const threshold = getLowStockThreshold(product);
+      const stockState = stock === 0 ? 'out' : stock <= threshold ? 'low' : 'healthy';
+      return `
           <article class="product-row">
             <div class="product-thumb" aria-hidden="true">${product.name.slice(0, 1).toUpperCase()}</div>
             <div class="product-row-info">
@@ -816,7 +869,7 @@ function renderProductsList() {
             </div>
           </article>
         `;
-      }).join('')
+    }).join('')
     : `<div class="products-empty-state"><div class="empty-state-icon">+</div><h4>Aucun produit trouvé</h4><p>Essayez une autre recherche ou ajoutez un produit au catalogue.</p><button type="button" class="secondary-btn" data-empty-add-product>Ajouter un produit</button></div>`;
 
   listEl.querySelectorAll('[data-edit-product]').forEach((button) => {
@@ -828,17 +881,17 @@ function renderProductsList() {
   listEl.querySelector('[data-empty-add-product]')?.addEventListener('click', focusProductEditor);
 }
 
-function deleteProduct(productId) {
+async function deleteProduct(productId) {
   const product = getProductById(productId);
   if (!product) return;
   const confirmed = window.confirm(`Supprimer ${product.name} ? Le produit sera retiré du catalogue, mais l’historique des ventes sera conservé.`);
   if (!confirmed) return;
 
-  state.products = state.products.filter((entry) => entry.id !== productId);
-  cart = cart.filter((item) => item.productId !== productId);
-  if (editingProductId === productId) cancelProductEdit();
-  saveState();
-  renderAll();
+  const saved = await mutate(`/products/${productId}`, 'DELETE', null, () => {
+    state.products = state.products.filter((entry) => entry.id !== productId);
+    cart = cart.filter((item) => item.productId !== productId);
+  });
+  if (saved !== null && editingProductId === productId) cancelProductEdit();
 }
 
 function focusProductEditor() {
@@ -895,18 +948,16 @@ function cancelAddStock() {
   document.getElementById('product-stock-addition').value = '';
 }
 
-function addStockToProduct() {
+async function addStockToProduct() {
   if (!editingProductId) return;
   const amount = Number(document.getElementById('product-stock-addition').value);
   const product = getProductById(editingProductId);
   if (!product || !amount || amount < 1) return;
-  product.stock += amount;
-  document.getElementById('product-current-stock').textContent = product.stock;
+  const saved = await mutate(`/products/${editingProductId}/stock`, 'POST', { amount });
+  if (saved === null) return;
+  document.getElementById('product-current-stock').textContent = saved.product.stock;
   document.getElementById('product-stock-addition').value = '';
   document.getElementById('product-stock-add-row').classList.add('hidden');
-  saveState();
-  renderProductsList();
-  renderDashboard();
 }
 
 function renderCustomersList() {
@@ -976,6 +1027,8 @@ function showCustomerProfile(customerId) {
   if (!customer) return;
   selectedCustomerProfile = customer;
   const allSalesForCustomer = [...state.sales.filter((sale) => sale.customerId === customer.id)].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  const rangedPurchases = getCustomerPurchasesForRange(customer.id, customerPurchaseRange);
+  const rangedPurchaseTotal = rangedPurchases.reduce((sum, sale) => sum + Number(sale.totalAmount || 0), 0);
   const salesForCustomer = customerHistoryDateFilter
     ? allSalesForCustomer.filter((sale) => new Date(sale.createdAt).toISOString().slice(0, 10) === customerHistoryDateFilter)
     : allSalesForCustomer;
@@ -984,10 +1037,17 @@ function showCustomerProfile(customerId) {
     ? salesForCustomer.find((sale) => sale.id === selectedCustomerInvoiceId) || null
     : null;
 
+  const customPurchaseRangeHtml = customerPurchaseRange === 'custom' ? `
+    <div class="customer-period-custom inline-custom-range">
+      <label>Du <input type="date" id="customer-purchase-start" value="${customerPurchaseCustomRange.start || ''}" /></label>
+      <label>Au <input type="date" id="customer-purchase-end" value="${customerPurchaseCustomRange.end || ''}" /></label>
+    </div>
+  ` : '';
+
   const purchaseHistoryHtml = salesForCustomer.length
     ? salesForCustomer.map((sale) => {
-        const { label, settledAt } = getInvoiceHistoryLabel(customer, sale);
-        return `
+      const { label, settledAt } = getInvoiceHistoryLabel(customer, sale);
+      return `
         <button class="purchase-row ${selectedSale && selectedSale.id === sale.id ? 'active' : ''}" data-open-sale="${sale.id}">
           <div class="purchase-row-info">
             <strong>Facture n°${sale.id.slice(-4)}</strong>
@@ -1001,7 +1061,7 @@ function showCustomerProfile(customerId) {
           <span class="purchase-arrow">›</span>
         </button>
       `;
-      }).join('')
+    }).join('')
     : `<p class="empty-state">${customerHistoryDateFilter ? 'Aucun achat à cette date.' : 'Aucun achat pour le moment.'}</p>`;
 
   const selectedSaleHistory = selectedSale ? getInvoiceHistoryLabel(customer, selectedSale) : null;
@@ -1045,7 +1105,8 @@ function showCustomerProfile(customerId) {
         </table>
 
         <div class="invoice-totals">
-          <div><span>Sous-total</span><strong>${formatMoney(selectedSale.totalAmount)}</strong></div>
+          <div><span>Sous-total</span><strong>${formatMoney(Number(selectedSale.totalAmount || 0) + Number(selectedSale.discount || 0))}</strong></div>
+          ${selectedSale.discountPercent > 0 ? `<div><span>Remise (${selectedSale.discountPercent} %)</span><strong>-${formatMoney(selectedSale.discount)}</strong></div>` : ''}
           <div><span>Montant payé</span><strong>${formatMoney(getInvoicePaidAmount(selectedSale))}</strong></div>
           <div><span>Reste à payer</span><strong>${formatMoney(getInvoiceRemainingAmount(selectedSale))}</strong></div>
           ${selectedSale.paymentMethod === 'debt' ? `<div><span>Statut</span><strong>${selectedSaleHistory.label}</strong></div>` : ''}
@@ -1100,7 +1161,10 @@ function showCustomerProfile(customerId) {
 
       <div class="profile-panel">
         <h4>Achats</h4>
-        <p>${allSalesForCustomer.length} achat${allSalesForCustomer.length === 1 ? '' : 's'}</p>
+        <label class="purchase-range-control"><span>Période</span><select id="customer-purchase-range"><option value="today" ${customerPurchaseRange === 'today' ? 'selected' : ''}>Aujourd’hui</option><option value="7d" ${customerPurchaseRange === '7d' ? 'selected' : ''}>7 derniers jours</option><option value="30d" ${customerPurchaseRange === '30d' ? 'selected' : ''}>30 derniers jours</option><option value="custom" ${customerPurchaseRange === 'custom' ? 'selected' : ''}>Personnalisé</option></select></label>
+        ${customPurchaseRangeHtml}
+        <strong class="purchase-range-total">${formatMoney(rangedPurchaseTotal)}</strong>
+        <small>${rangedPurchases.length} achat${rangedPurchases.length === 1 ? '' : 's'} sur la période</small>
       </div>
 
       <div class="profile-panel">
@@ -1158,6 +1222,25 @@ function showCustomerProfile(customerId) {
     selectedCustomerInvoiceId = null;
     showCustomerProfile(customer.id);
   });
+
+  document.getElementById('customer-purchase-range')?.addEventListener('change', (event) => {
+    customerPurchaseRange = event.target.value;
+    if (customerPurchaseRange !== 'custom') {
+      customerPurchaseCustomRange = { start: '', end: '' };
+    }
+    showCustomerProfile(customer.id);
+  });
+
+  if (customerPurchaseRange === 'custom') {
+    document.getElementById('customer-purchase-start')?.addEventListener('change', (event) => {
+      customerPurchaseCustomRange.start = event.target.value;
+      showCustomerProfile(customer.id);
+    });
+    document.getElementById('customer-purchase-end')?.addEventListener('change', (event) => {
+      customerPurchaseCustomRange.end = event.target.value;
+      showCustomerProfile(customer.id);
+    });
+  }
 
   document.getElementById('clear-customer-history-date')?.addEventListener('click', () => {
     customerHistoryDateFilter = '';
@@ -1225,22 +1308,109 @@ function renderClientRows(listEl, searchValue) {
 }
 
 function renderClientProfilePage(container, customer) {
-  const invoices = [...state.sales.filter((sale) => sale.customerId === customer.id)].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-  container.innerHTML = `
-    <div class="ledger-page">
-      <div class="ledger-page-header"><button type="button" class="ledger-back-btn" data-client-back>← Clients</button></div>
-      <div class="ledger-entity-header"><div><p class="section-kicker">Profil client</p><h3>${customer.name}</h3><span class="subtle">${customer.phone}</span></div><div class="ledger-entity-stats"><div><span>Total dû</span><strong>${formatMoney(customer.balance)}</strong></div><div><span>Total des achats</span><strong>${formatMoney(customer.totalPurchased)}</strong></div><div><span>Total payé</span><strong>${formatMoney(customer.totalPaid)}</strong></div></div></div>
-      <div class="ledger-section-heading"><h4>Historique des transactions</h4><span>${invoices.length} transaction${invoices.length === 1 ? '' : 's'}</span></div>
-      <div class="ledger-table ledger-invoice-list">
-        ${invoices.length ? invoices.map((invoice) => isReturn(invoice)
-          // A return has no paid/remaining figures, so it gets its own row shape.
-          ? `<button type="button" class="ledger-row invoice-ledger-row ledger-return-row" data-client-invoice-id="${invoice.id}"><span><strong>Retour n°${invoice.id.slice(-4)}</strong><small>${new Date(invoice.createdAt).toLocaleDateString('fr-FR')}</small></span><span><strong>${formatMoney(invoice.totalAmount)}</strong><small>Total du retour</small></span><span><strong>${invoice.items.reduce((sum, item) => sum + Number(item.quantity || 0), 0)}</strong><small>Article(s)</small></span><span class="ledger-remaining"><strong>&mdash;</strong><small>Reste à payer</small></span><span><b class="ledger-status ledger-status-return">Retour</b></span><span class="ledger-arrow">›</span></button>`
-          : `<button type="button" class="ledger-row invoice-ledger-row" data-client-invoice-id="${invoice.id}"><span><strong>Facture n°${invoice.id.slice(-4)}</strong><small>${new Date(invoice.createdAt).toLocaleDateString('fr-FR')}</small></span><span><strong>${formatMoney(invoice.totalAmount)}</strong><small>Total</small></span><span><strong>${formatMoney(getInvoicePaidAmount(invoice))}</strong><small>Payé</small></span><span class="ledger-remaining"><strong>${formatMoney(getInvoiceRemainingAmount(invoice))}</strong><small>Reste à payer</small></span><span><b class="ledger-status ${getInvoiceRemainingAmount(invoice) <= 0 ? 'ledger-status-paid' : ''}">${getInvoiceStatus(invoice)}</b></span><span class="ledger-arrow">›</span></button>`
-        ).join('') : '<p class="empty-state">Aucune transaction pour ce client.</p>'}
+  const purchaseSummaryTotal = getCustomerPurchaseTotalForFilter(customer.id, customerPurchaseSummaryFilter);
+  const transactionHistoryRows = getCustomerTransactionHistoryForFilter(customer.id, customerTransactionHistoryFilter);
+  const purchaseFilterLabel = getDateFilterSummary(customerPurchaseSummaryFilter);
+  const historyFilterLabel = getDateFilterSummary(customerTransactionHistoryFilter);
+
+  const purchaseSummaryPicker = `
+    <div class="compact-date-popover hidden" data-purchase-summary-picker>
+      <div class="compact-date-picker-grid">
+        <label>Du<input type="date" data-purchase-summary-start value="${customerPurchaseSummaryFilter.start || ''}" /></label>
+        <label>Au<input type="date" data-purchase-summary-end value="${customerPurchaseSummaryFilter.end || ''}" /></label>
+      </div>
+      <div class="compact-date-picker-actions">
+        <button type="button" class="primary-btn compact-btn" data-apply-purchase-summary>Appliquer</button>
+        <button type="button" class="link-btn muted" data-clear-purchase-summary>Effacer</button>
       </div>
     </div>
   `;
+
+  const historyPicker = `
+    <div class="compact-date-popover hidden" data-history-picker>
+      <div class="compact-date-picker-grid">
+        <label>Du<input type="date" data-history-start value="${customerTransactionHistoryFilter.start || ''}" /></label>
+        <label>Au<input type="date" data-history-end value="${customerTransactionHistoryFilter.end || ''}" /></label>
+      </div>
+      <div class="compact-date-picker-actions">
+        <button type="button" class="primary-btn compact-btn" data-apply-history>Appliquer</button>
+        <button type="button" class="link-btn muted" data-clear-history>Effacer</button>
+      </div>
+    </div>
+  `;
+
+  container.innerHTML = `
+    <div class="ledger-page">
+      <div class="ledger-page-header"><button type="button" class="ledger-back-btn" data-client-back>← Clients</button></div>
+      <div class="ledger-entity-header">
+        <div><p class="section-kicker">Profil client</p><h3>${customer.name}</h3><span class="subtle">${customer.phone}</span></div>
+        <div class="ledger-entity-stats">
+          <div class="customer-summary-card">
+            <div class="customer-summary-header">
+              <span>Total acheté</span>
+              <button type="button" class="calendar-icon-btn" data-purchase-summary-toggle aria-label="Choisir une période pour le total acheté">📅</button>
+            </div>
+            ${purchaseSummaryPicker}
+            <strong class="customer-summary-total">${formatMoney(purchaseSummaryTotal)}</strong>
+          </div>
+        </div>
+      </div>
+      <div class="ledger-section-heading">
+        <h4>Historique des transactions</h4>
+        <div class="ledger-history-filter-wrap">
+          <button type="button" class="calendar-icon-btn" data-history-toggle aria-label="Choisir une période pour l’historique des transactions">📅</button>
+          ${historyPicker}
+          <span>${transactionHistoryRows.length} transaction${transactionHistoryRows.length === 1 ? '' : 's'}</span>
+        </div>
+      </div>
+      <div class="ledger-table ledger-invoice-list">
+        ${transactionHistoryRows.length ? transactionHistoryRows.map((invoice) => isReturn(invoice)
+    ? `<button type="button" class="ledger-row invoice-ledger-row ledger-return-row" data-client-invoice-id="${invoice.id}"><span><strong>Retour n°${invoice.id.slice(-4)}</strong><small>${new Date(invoice.createdAt).toLocaleDateString('fr-FR')}</small></span><span><strong>${formatMoney(invoice.totalAmount)}</strong><small>Total du retour</small></span><span><strong>${invoice.items.reduce((sum, item) => sum + Number(item.quantity || 0), 0)}</strong><small>Article(s)</small></span><span class="ledger-remaining"><strong>&mdash;</strong><small>Reste à payer</small></span><span><b class="ledger-status ledger-status-return">Retour</b></span><span class="ledger-arrow">›</span></button>`
+    : `<button type="button" class="ledger-row invoice-ledger-row" data-client-invoice-id="${invoice.id}"><span><strong>Facture n°${invoice.id.slice(-4)}</strong><small>${new Date(invoice.createdAt).toLocaleDateString('fr-FR')}</small></span><span><strong>${formatMoney(invoice.totalAmount)}</strong><small>Total</small></span><span><strong>${formatMoney(getInvoicePaidAmount(invoice))}</strong><small>Payé</small></span><span class="ledger-remaining"><strong>${formatMoney(getInvoiceRemainingAmount(invoice))}</strong><small>Reste à payer</small></span><span><b class="ledger-status ${getInvoiceRemainingAmount(invoice) <= 0 ? 'ledger-status-paid' : ''}">${getInvoiceStatus(invoice)}</b></span><span class="ledger-arrow">›</span></button>`
+  ).join('') : '<p class="empty-state">Aucune transaction pour ce client.</p>'}
+      </div>
+    </div>
+  `;
+
   container.querySelector('[data-client-back]')?.addEventListener('click', () => navigateClient('/clients'));
+  container.querySelector('[data-purchase-summary-toggle]')?.addEventListener('click', () => {
+    container.querySelector('[data-purchase-summary-picker]')?.classList.toggle('hidden');
+  });
+  container.querySelector('[data-history-toggle]')?.addEventListener('click', () => {
+    container.querySelector('[data-history-picker]')?.classList.toggle('hidden');
+  });
+  container.querySelector('[data-apply-purchase-summary]')?.addEventListener('click', () => {
+    const start = container.querySelector('[data-purchase-summary-start]')?.value || '';
+    const end = container.querySelector('[data-purchase-summary-end]')?.value || '';
+    customerPurchaseSummaryFilter = {
+      mode: getDateFilterMode(start, end),
+      start,
+      end
+    };
+    container.querySelector('[data-purchase-summary-picker]')?.classList.add('hidden');
+    renderClientProfilePage(container, customer);
+  });
+  container.querySelector('[data-clear-purchase-summary]')?.addEventListener('click', () => {
+    customerPurchaseSummaryFilter = { mode: 'all', start: '', end: '' };
+    container.querySelector('[data-purchase-summary-picker]')?.classList.add('hidden');
+    renderClientProfilePage(container, customer);
+  });
+  container.querySelector('[data-apply-history]')?.addEventListener('click', () => {
+    const start = container.querySelector('[data-history-start]')?.value || '';
+    const end = container.querySelector('[data-history-end]')?.value || '';
+    customerTransactionHistoryFilter = {
+      mode: getDateFilterMode(start, end),
+      start,
+      end
+    };
+    container.querySelector('[data-history-picker]')?.classList.add('hidden');
+    renderClientProfilePage(container, customer);
+  });
+  container.querySelector('[data-clear-history]')?.addEventListener('click', () => {
+    customerTransactionHistoryFilter = { mode: 'all', start: '', end: '' };
+    container.querySelector('[data-history-picker]')?.classList.add('hidden');
+    renderClientProfilePage(container, customer);
+  });
   container.querySelectorAll('[data-client-invoice-id]').forEach((button) => button.addEventListener('click', () => navigateClient(`/clients/${encodeURIComponent(customer.id)}/invoices/${encodeURIComponent(button.dataset.clientInvoiceId)}`)));
 }
 
@@ -1269,7 +1439,7 @@ function renderClientInvoicePage(container, customer, invoiceId) {
       <div class="ledger-page-header"><button type="button" class="ledger-back-btn" data-client-back>← Profil de ${customer.name}</button></div>
       <div class="ledger-entity-header"><div><p class="section-kicker">Détails de la facture</p><h3>Facture n°${invoice.id.slice(-4)}</h3><span class="subtle">${new Date(invoice.createdAt).toLocaleString('fr-FR')} · ${customer.name} · ${customer.phone}</span></div><b class="ledger-status ${getInvoiceRemainingAmount(invoice) <= 0 ? 'ledger-status-paid' : ''}">${getInvoiceStatus(invoice)}</b></div>
       <table class="ledger-detail-items"><thead><tr><th>Produit</th><th>Quantité</th><th>Prix unitaire</th><th>Total</th></tr></thead><tbody>${invoice.items.map((item) => `<tr><td>${item.productName}</td><td>${item.quantity}</td><td>${formatMoney(item.unitPrice)}</td><td>${formatMoney(item.subtotal)}</td></tr>`).join('')}</tbody></table>
-      <div class="ledger-financial-summary"><div><span>Total de la facture</span><strong>${formatMoney(invoice.totalAmount)}</strong></div><div><span>Total payé</span><strong>${formatMoney(getInvoicePaidAmount(invoice))}</strong></div><div><span>Reste à payer</span><strong>${formatMoney(getInvoiceRemainingAmount(invoice))}</strong></div></div>
+      <div class="ledger-financial-summary">${invoice.discountPercent > 0 ? `<div><span>Remise (${invoice.discountPercent} %)</span><strong>-${formatMoney(invoice.discount)}</strong></div>` : ''}<div><span>Total de la facture</span><strong>${formatMoney(invoice.totalAmount)}</strong></div><div><span>Total payé</span><strong>${formatMoney(getInvoicePaidAmount(invoice))}</strong></div><div><span>Reste à payer</span><strong>${formatMoney(getInvoiceRemainingAmount(invoice))}</strong></div></div>
       <div class="ledger-payment-history"><h4>Historique des paiements</h4>${payments.length ? payments.map((payment) => `<div><span>${new Date(payment.date).toLocaleString('fr-FR')}</span><strong>${formatMoney(payment.amount)}</strong></div>`).join('') : '<p class="empty-state">Aucun paiement enregistré pour cette facture.</p>'}</div>
       <p class="ledger-view-only-note">Consultation uniquement. Les paiements se gèrent depuis la section Dettes clients.</p>
     </div>
@@ -1363,7 +1533,7 @@ function renderDebtInvoicePage(container, customer, invoiceId) {
       <div class="ledger-page-header"><button type="button" class="ledger-back-btn" data-debt-back>← Factures impayées de ${customer.name}</button></div>
       <div class="ledger-entity-header"><div><p class="section-kicker">Détails de la facture</p><h3>Facture n°${invoice.id.slice(-4)}</h3><span class="subtle">${new Date(invoice.createdAt).toLocaleString('fr-FR')} · ${customer.name}</span></div><b class="ledger-status">${getInvoiceStatus(invoice)}</b></div>
       <table class="ledger-detail-items"><thead><tr><th>Produit</th><th>Quantité</th><th>Prix unitaire</th><th>Total</th></tr></thead><tbody>${invoice.items.map((item) => `<tr><td>${item.productName}</td><td>${item.quantity}</td><td>${formatMoney(item.unitPrice)}</td><td>${formatMoney(item.subtotal)}</td></tr>`).join('')}</tbody></table>
-      <div class="ledger-financial-summary"><div><span>Total de la facture</span><strong>${formatMoney(invoice.totalAmount)}</strong></div><div><span>Total payé</span><strong>${formatMoney(getInvoicePaidAmount(invoice))}</strong></div><div><span>Reste à payer</span><strong>${formatMoney(getInvoiceRemainingAmount(invoice))}</strong></div></div>
+      <div class="ledger-financial-summary">${invoice.discountPercent > 0 ? `<div><span>Remise (${invoice.discountPercent} %)</span><strong>-${formatMoney(invoice.discount)}</strong></div>` : ''}<div><span>Total de la facture</span><strong>${formatMoney(invoice.totalAmount)}</strong></div><div><span>Total payé</span><strong>${formatMoney(getInvoicePaidAmount(invoice))}</strong></div><div><span>Reste à payer</span><strong>${formatMoney(getInvoiceRemainingAmount(invoice))}</strong></div></div>
       <div class="ledger-payment-history"><h4>Historique des paiements</h4>${payments.length ? payments.map((payment) => `<div><span>${new Date(payment.date).toLocaleString('fr-FR')}</span><strong>${formatMoney(payment.amount)}</strong></div>`).join('') : '<p class="empty-state">Aucun paiement enregistré pour cette facture.</p>'}</div>
       ${getInvoiceRemainingAmount(invoice) > 0 ? `<form id="payment-form" class="ledger-payment-form"><input id="payment-customer-select" type="hidden" value="${customer.id}" /><input id="payment-invoice-select" type="hidden" value="${invoice.id}" /><label>Enregistrer un paiement<input id="payment-amount" type="number" step="0.01" min="0.01" max="${getInvoiceRemainingAmount(invoice)}" placeholder="Montant du paiement" required /></label><button type="submit" class="primary-btn">Enregistrer le paiement</button><div id="payment-message" class="message-box"></div></form>` : '<p class="ledger-paid-note">Cette facture est entièrement payée.</p>'}
     </div>
@@ -1403,9 +1573,9 @@ function renderSalesHistory() {
     </thead>
     <tbody>
       ${filtered.map((sale) => {
-        const customer = getCustomerById(sale.customerId);
-        const returning = isReturn(sale);
-        return `
+    const customer = getCustomerById(sale.customerId);
+    const returning = isReturn(sale);
+    return `
           <tr class="${returning ? 'history-return-row' : ''}">
             <td>${new Date(sale.createdAt).toLocaleDateString('fr-FR')}</td>
             <td><span class="mini-pill ${returning ? 'return' : 'neutral'}">${returning ? 'Retour' : 'Vente'}</span></td>
@@ -1419,7 +1589,7 @@ function renderSalesHistory() {
             </td>
           </tr>
         `;
-      }).join('') || '<tr><td colspan="7">Aucune transaction trouvée.</td></tr>'}
+  }).join('') || '<tr><td colspan="7">Aucune transaction trouvée.</td></tr>'}
     </tbody>
   </table>`;
 
@@ -1476,6 +1646,7 @@ function openReceipt(saleId) {
   const invoiceBusiness = state.settings;
   const subtotal = sale.items.reduce((sum, item) => sum + (item.subtotal ?? item.quantity * item.unitPrice), 0);
   const discount = Number(sale.discount || 0);
+  const discountPercent = Number(sale.discountPercent || 0);
   const paidAmount = getInvoicePaidAmount(sale);
   const remainingBalance = getInvoiceRemainingAmount(sale);
   const isFullyPaid = remainingBalance <= 0;
@@ -1554,12 +1725,12 @@ function openReceipt(saleId) {
 
       <section class="invoice-summary">
         ${returning
-          ? `<div class="invoice-payment-box">
+      ? `<div class="invoice-payment-box">
           <strong>Retour</strong>
           <div><span>Type</span><strong>Retour de marchandise</strong></div>
           <div><span>Articles retournés</span><strong>${sale.items.reduce((sum, item) => sum + Number(item.quantity || 0), 0)}</strong></div>
         </div>`
-          : `<div class="invoice-payment-box">
+      : `<div class="invoice-payment-box">
           <strong>Paiement</strong>
           <div><span>Montant payé</span><strong>${formatMoney(paidAmount)}</strong></div>
           <div><span>Mode de paiement</span><strong>${paymentLabel}</strong></div>
@@ -1567,7 +1738,7 @@ function openReceipt(saleId) {
         </div>`}
         <div class="invoice-total-box">
           <div><span>Sous-total</span><strong>${formatMoney(subtotal)}</strong></div>
-          ${discount > 0 ? `<div><span>Remise</span><strong>-${formatMoney(discount)}</strong></div>` : ''}
+          ${discount > 0 ? `<div><span>Remise (${discountPercent} %)</span><strong>-${formatMoney(discount)}</strong></div>` : ''}
           <div class="invoice-grand-total"><span>${returning ? 'Total du retour' : 'Total'}</span><strong>${formatMoney(sale.totalAmount)}</strong></div>
         </div>
       </section>
@@ -1625,37 +1796,23 @@ function closeDeleteSaleConfirmation() {
   document.getElementById('delete-sale-modal').classList.add('hidden');
 }
 
-function confirmDeleteSale() {
+async function confirmDeleteSale() {
   if (!pendingDeleteSaleId) return;
   const saleIndex = state.sales.findIndex((sale) => sale.id === pendingDeleteSaleId);
   if (saleIndex < 0) return;
 
   const sale = state.sales[saleIndex];
-  // Undo whatever the transaction did to stock: a sale removed units, a return
-  // added them back.
   const returning = isReturn(sale);
-  sale.items.forEach((item) => {
-    const product = getProductById(item.productId);
-    if (!product) return;
-    product.stock = returning
-      ? Math.max(0, Number(product.stock || 0) - item.quantity)
-      : Number(product.stock || 0) + item.quantity;
+  const saved = await mutate(`/sales/${sale.id}`, 'DELETE', null, () => {
+    state.sales = state.sales.filter((entry) => entry.id !== sale.id);
   });
-
-  const customer = getCustomerById(sale.customerId);
-  if (customer) {
-    customer.debtHistory = customer.debtHistory.filter((entry) => entry.saleId !== sale.id);
-  }
-
-  state.sales.splice(saleIndex, 1);
-  saveState();
+  if (saved === null) return;
   closeDeleteSaleConfirmation();
   closeReceipt();
-  renderAll();
   showMessage('pos-message', returning ? 'Retour supprimé et stock rétabli.' : 'Vente supprimée et écritures rétablies.', 'success');
 }
 
-function handleProductSubmit(event) {
+async function handleProductSubmit(event) {
   event.preventDefault();
   const payload = {
     name: document.getElementById('product-name').value.trim(),
@@ -1669,28 +1826,15 @@ function handleProductSubmit(event) {
     return;
   }
 
-  if (editingProductId) {
-    const index = state.products.findIndex((product) => product.id === editingProductId);
-    const existingProduct = state.products[index];
-    state.products[index] = {
-      ...existingProduct,
-      ...payload
-    };
-  } else {
-    if (startingStock < 0) return;
-    state.products.push({
-      id: uid('prod'),
-      ...payload,
-      stock: startingStock
-    });
-  }
-
-  saveState();
+  if (!editingProductId && startingStock < 0) return;
+  const saved = editingProductId
+    ? await mutate(`/products/${editingProductId}`, 'PUT', payload)
+    : await mutate('/products', 'POST', { ...payload, stock: startingStock });
+  if (saved === null) return;
   cancelProductEdit();
-  renderAll();
 }
 
-function handleCustomerSubmit(event) {
+async function handleCustomerSubmit(event) {
   event.preventDefault();
   const payload = {
     name: document.getElementById('customer-name').value.trim(),
@@ -1700,25 +1844,11 @@ function handleCustomerSubmit(event) {
 
   if (!payload.name || !payload.phone) return;
 
-  if (editingCustomerId) {
-    const index = state.customers.findIndex((customer) => customer.id === editingCustomerId);
-    state.customers[index] = { ...state.customers[index], ...payload };
-  } else {
-    state.customers.push({
-      id: uid('cust'),
-      name: payload.name,
-      phone: payload.phone,
-      address: payload.address,
-      balance: 0,
-      totalPurchased: 0,
-      totalPaid: 0,
-      debtHistory: []
-    });
-  }
-
-  saveState();
+  const saved = editingCustomerId
+    ? await mutate(`/customers/${editingCustomerId}`, 'PUT', payload)
+    : await mutate('/customers', 'POST', payload);
+  if (saved === null) return;
   cancelCustomerEdit();
-  renderAll();
 }
 
 function toggleNewCustomerFields() {
@@ -1727,7 +1857,7 @@ function toggleNewCustomerFields() {
   if (!isHidden) document.getElementById('new-customer-name').focus();
 }
 
-function addCustomerFromPos() {
+async function addCustomerFromPos() {
   const name = document.getElementById('new-customer-name').value.trim();
   const phone = document.getElementById('new-customer-phone').value.trim();
   const address = document.getElementById('new-customer-address').value.trim();
@@ -1737,27 +1867,15 @@ function addCustomerFromPos() {
     return;
   }
 
-  const newCustomer = {
-    id: uid('cust'),
-    name,
-    phone,
-    address,
-    balance: 0,
-    totalPurchased: 0,
-    totalPaid: 0,
-    debtHistory: []
-  };
-
-  state.customers.push(newCustomer);
-  saveState();
-  selectedPosCustomerId = newCustomer.id;
-  document.getElementById('pos-customer-search').value = `${newCustomer.name} (${newCustomer.phone})`;
+  const saved = await mutate('/customers', 'POST', { name, phone, address });
+  if (saved === null) return;
+  selectedPosCustomerId = saved.customer.id;
+  document.getElementById('pos-customer-search').value = `${saved.customer.name} (${saved.customer.phone})`;
   document.getElementById('new-customer-name').value = '';
   document.getElementById('new-customer-phone').value = '';
   document.getElementById('new-customer-address').value = '';
   document.getElementById('new-customer-fields').classList.add('hidden');
   showMessage('pos-message', 'Client créé avec succès.', 'success');
-  renderAll();
 }
 
 let pendingPayment = null;
@@ -1807,7 +1925,7 @@ function recordPayment(event) {
   openPaymentConfirmation();
 }
 
-function confirmPaymentRecord() {
+async function confirmPaymentRecord() {
   if (!pendingPayment) return;
 
   const customer = getCustomerById(pendingPayment.customerId);
@@ -1815,22 +1933,12 @@ function confirmPaymentRecord() {
   if (!customer || !invoice) return;
 
   if (pendingPayment.amount > getInvoiceRemainingAmount(invoice)) return;
-  invoice.amountPaid = getInvoicePaidAmount(invoice) + pendingPayment.amount;
-  invoice.status = getInvoiceStatus(invoice);
-  customer.debtHistory.push({
-    id: uid('payment'),
-    type: 'payment',
-    amount: pendingPayment.amount,
-    date: new Date().toISOString(),
-    saleId: invoice.id
-  });
-
   const paymentAmount = pendingPayment.amount;
   const invoiceNumber = pendingPayment.invoiceNumber;
-  saveState();
+  const saved = await mutate(`/sales/${invoice.id}/payments`, 'POST', { amount: paymentAmount });
+  if (saved === null) return;
   document.getElementById('payment-form').reset();
   closePaymentConfirmation();
-  renderAll();
   showMessage('payment-message', `Paiement de ${formatMoney(paymentAmount)} enregistré sur la facture n°${invoiceNumber}.`, 'success');
 }
 
@@ -1903,134 +2011,42 @@ async function confirmSale() {
 // An independent Retour transaction: it never looks up, links to, or edits an
 // existing sale, and it leaves every customer balance and total alone.
 async function confirmReturn() {
-  const { customerId, totalAmount, items } = pendingSale;
-  const returnId = uid('return');
-  const returnRecord = {
-    id: returnId,
+  const { customerId, items } = pendingSale;
+  const saved = await mutate('/sales', 'POST', {
     type: 'return',
-    createdAt: new Date().toISOString(),
     customerId,
-    totalAmount,
-    items: items.map((item) => ({
-      productId: item.productId,
-      productName: item.productName,
-      quantity: item.quantity,
-      unitPrice: item.unitPrice,
-      subtotal: item.quantity * item.unitPrice
-    }))
-  };
-
-  state.sales.push(returnRecord);
-
-  items.forEach((item) => {
-    const product = getProductById(item.productId);
-    if (!product) return;
-    product.stock = Number(product.stock || 0) + item.quantity;
+    items: items.map((item) => ({ productId: item.productId, quantity: item.quantity }))
   });
+  if (saved === null) return;
 
   cart = [];
+  saleDiscountPercent = 0;
   selectedPosCustomerId = null;
   document.getElementById('pos-customer-search').value = '';
   closeSaleConfirmation();
-  renderAll();
-
-  const saved = await saveState();
-  if (saved) {
-    showMessage('pos-message', 'Retour enregistré. Le stock a été réapprovisionné.', 'success');
-    openReceipt(returnId);
-    return;
-  }
-
-  showMessage(
-    'pos-message',
-    'ATTENTION : le retour n’a PAS été enregistré sur le serveur. Ne fermez pas cette page, vérifiez la connexion puis réessayez.',
-    'error'
-  );
+  showMessage('pos-message', 'Retour enregistré. Le stock a été réapprovisionné.', 'success');
+  openReceipt(saved.sale.id);
 }
 
 async function confirmSaleTransaction() {
-  const { customerId, paymentMethod, partialAmount, totalAmount, items } = pendingSale;
-  const amountPaid = paymentMethod === 'cash' ? totalAmount : paymentMethod === 'partial' ? partialAmount : 0;
-  const remainingAmount = totalAmount - amountPaid;
-  const saleId = uid('sale');
-  const saleRecord = {
-    id: saleId,
+  const { customerId, paymentMethod, partialAmount, items } = pendingSale;
+  const saved = await mutate('/sales', 'POST', {
     type: 'sale',
-    createdAt: new Date().toISOString(),
     customerId,
-    paymentMethod,
-    totalAmount,
-    paymentMethod: paymentMethod === 'cash' ? 'cash' : 'debt',
     paymentType: paymentMethod,
-    amountPaid,
-    debtAmount: remainingAmount,
-    status: paymentMethod === 'cash' ? 'Paid' : paymentMethod === 'partial' ? 'Partially Paid' : 'Unpaid',
-    items: items.map((item) => ({
-      productId: item.productId,
-      productName: item.productName,
-      quantity: item.quantity,
-      unitPrice: item.unitPrice,
-      subtotal: item.quantity * item.unitPrice
-    }))
-  };
-
-  state.sales.push(saleRecord);
-
-  items.forEach((item) => {
-    const product = getProductById(item.productId);
-    if (!product) return;
-    product.stock = Math.max(0, product.stock - item.quantity);
+    partialAmount: paymentMethod === 'partial' ? partialAmount : 0,
+    discountPercent: saleDiscountPercent,
+    items: items.map((item) => ({ productId: item.productId, quantity: item.quantity }))
   });
-
-  if (customerId) {
-    const customer = getCustomerById(customerId);
-    if (customer) {
-      customer.totalPurchased += totalAmount;
-      if (paymentMethod === 'cash') {
-        customer.totalPaid += totalAmount;
-      }
-
-      if (paymentMethod !== 'cash') {
-        customer.debtHistory.push({
-          id: uid('ledger'),
-          type: 'sale',
-          amount: totalAmount,
-          date: new Date().toISOString(),
-          saleId
-        });
-        if (amountPaid > 0) {
-          customer.debtHistory.push({
-            id: uid('payment'),
-            type: 'payment',
-            amount: amountPaid,
-            date: new Date().toISOString(),
-            saleId
-          });
-        }
-      }
-    }
-  }
+  if (saved === null) return;
 
   cart = [];
+  saleDiscountPercent = 0;
   selectedPosCustomerId = null;
   document.getElementById('pos-customer-search').value = '';
   closeSaleConfirmation();
-  renderAll();
-
-  // Only confirm the sale to the operator once the server has acknowledged the write,
-  // otherwise a failed save would still print a receipt for a sale nobody recorded.
-  const saved = await saveState();
-  if (saved) {
-    showMessage('pos-message', 'Vente finalisée avec succès.', 'success');
-    openReceipt(saleId);
-    return;
-  }
-
-  showMessage(
-    'pos-message',
-    'ATTENTION : la vente n’a PAS été enregistrée sur le serveur. Ne fermez pas cette page, vérifiez la connexion puis réessayez.',
-    'error'
-  );
+  showMessage('pos-message', 'Vente finalisée avec succès.', 'success');
+  openReceipt(saved.sale.id);
 }
 
 // --- Dépenses ---------------------------------------------------------------
@@ -2114,9 +2130,8 @@ function renderExpenses() {
   document.getElementById('expense-custom-range').classList.toggle('hidden', expenseFilters.dateMode !== 'custom');
 
   if (!filtered.length) {
-    list.innerHTML = `<p class="empty-state">${
-      state.expenses.length && hasActiveExpenseFilters() ? 'Aucune dépense pour ces critères' : 'Aucune dépense'
-    }</p>`;
+    list.innerHTML = `<p class="empty-state">${state.expenses.length && hasActiveExpenseFilters() ? 'Aucune dépense pour ces critères' : 'Aucune dépense'
+      }</p>`;
     return;
   }
 
@@ -2187,7 +2202,7 @@ function closeExpenseEditor() {
   document.getElementById('expense-editor-modal').classList.add('hidden');
 }
 
-function handleExpenseSubmit(event) {
+async function handleExpenseSubmit(event) {
   event.preventDefault();
   const type = document.getElementById('expense-type').value;
   const amount = Number(document.getElementById('expense-amount').value);
@@ -2207,18 +2222,11 @@ function handleExpenseSubmit(event) {
     return;
   }
 
-  const now = new Date().toISOString();
-  if (editingExpenseId) {
-    const existing = getExpenseById(editingExpenseId);
-    if (!existing) return;
-    Object.assign(existing, { type, amount, date, note, updatedAt: now });
-  } else {
-    state.expenses.push({ id: uid('exp'), type, amount, date, note, createdAt: now, updatedAt: now });
-  }
-
-  saveState();
+  const saved = editingExpenseId
+    ? await mutate(`/expenses/${editingExpenseId}`, 'PUT', { type, amount, date, note })
+    : await mutate('/expenses', 'POST', { type, amount, date, note });
+  if (saved === null) return;
   closeExpenseEditor();
-  renderExpenses();
 }
 
 function openExpenseDetails(expenseId) {
@@ -2254,14 +2262,15 @@ function closeExpenseDeleteConfirmation() {
   document.getElementById('expense-delete-modal').classList.add('hidden');
 }
 
-function confirmExpenseDelete() {
+async function confirmExpenseDelete() {
   if (!pendingDeleteExpenseId) return;
-  // Touches nothing but this one row in state.expenses.
-  state.expenses = state.expenses.filter((expense) => expense.id !== pendingDeleteExpenseId);
-  saveState();
+  const expenseId = pendingDeleteExpenseId;
+  const saved = await mutate(`/expenses/${expenseId}`, 'DELETE', null, () => {
+    state.expenses = state.expenses.filter((expense) => expense.id !== expenseId);
+  });
+  if (saved === null) return;
   closeExpenseDeleteConfirmation();
   closeExpenseDetails();
-  renderExpenses();
 }
 
 function setupExpenseListeners() {
@@ -2332,6 +2341,11 @@ function setupEventListeners() {
   });
   document.getElementById('income-range-apply').addEventListener('click', applyCustomIncomeRange);
   document.getElementById('payment-method-select').addEventListener('change', updatePosPaymentFields);
+  document.getElementById('sale-discount-percent').addEventListener('input', (event) => {
+    saleDiscountPercent = Math.min(100, Math.max(0, Number(event.target.value) || 0));
+    event.target.value = saleDiscountPercent;
+    renderCart();
+  });
   document.getElementById('history-customer-filter').addEventListener('input', renderSalesHistory);
   document.getElementById('history-customer-filter').addEventListener('input', renderHistoryCustomerSuggestions);
   document.getElementById('history-date-filter').addEventListener('change', renderSalesHistory);
@@ -2403,4 +2417,4 @@ if (window.location.pathname.startsWith('/debts')) {
   setActiveTab('customers');
   renderClientRoute();
 }
-syncStateFromServer();
+hydrate();

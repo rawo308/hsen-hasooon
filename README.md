@@ -318,7 +318,7 @@ The API automatically creates the tables from `schema.sql` when it starts. Confi
 - `sales`
 - `sale_items`
 - `debt_transactions`
-- `app_state`
+- `expenses`
 
 ### Production checklist
 
@@ -553,44 +553,55 @@ The live database is hosted on Aiven PostgreSQL. The connection URL is stored on
 
 The current public tables are:
 
-| Table | Current rows | Purpose |
-| --- | ---: | --- |
-| `store_settings` | 1 | STAR name, address, phone, email, invoice footer, and origin label |
-| `products` | 4 | Product catalog, prices, descriptions, and stock |
-| `customers` | 2 | Customer profiles and financial totals |
-| `sales` | 2 | Completed sale headers and payment status |
-| `sale_items` | 3 | Historical products, quantities, and actual sale prices |
-| `debt_transactions` | 4 | Debt sales and customer payments |
-| `app_state` | 1 | Temporary compatibility snapshot used by the current frontend API |
+| Table | Purpose |
+| --- | --- |
+| `store_settings` | Store name, address, phone, email, invoice footer, and origin label |
+| `products` | Product catalog, prices, descriptions, and stock |
+| `customers` | Customer profiles |
+| `sales` | Sale and return headers |
+| `sale_items` | Historical products, quantities, and actual sale prices |
+| `debt_transactions` | Credit extended and customer payments |
+| `expenses` | Recorded expenses |
+
+Two read-only views sit on top of them:
+
+| View | Purpose |
+| --- | --- |
+| `sale_payments` | What each credit invoice has actually been paid, summed from `debt_transactions` |
+| `customer_totals` | Per-customer purchased / paid / outstanding balance, derived from the sales and the ledger |
 
 ### Data flow
 
-The current frontend still exchanges one complete state object through `/api/state`. The API stores that snapshot in `app_state` and mirrors it into the normalized tables listed above.
+The frontend reads everything once through `GET /api/state` when it loads, then writes through one endpoint per resource. Each write returns only the records it touched, and the browser patches those into the state it already holds.
 
-This is intentional during the transition to a fully relational API. The normalized tables are already created and populated, but the frontend has not yet been rewritten to call separate product, customer, sale, and payment endpoints.
+Nothing is stored as a JSON blob. Money figures that used to be stored columns -- a customer's balance, an invoice's paid amount and status -- are derived on read from the views above, so they cannot drift from the transactions they summarise.
 
-### Database-backed STAR settings
+### Database-backed store settings
 
 The current database settings are:
 
-- Store: STAR
+- Store: H.H Fruit
 - Address: Libreville, Gabon
 - Phone: `+241 07 00 00 00`
 - Email: `contact@stargabon.ga`
 - Invoice footer: `Merci pour votre confiance !`
 - Origin label: `Made in Gabon`
 
-### Next database step
+### API routes
 
-The next major backend step is replacing the compatibility `/api/state` flow with dedicated API routes such as:
+| Route | Purpose |
+| --- | --- |
+| `GET /api/state` | Everything the app renders, in one round trip on load |
+| `GET/PUT /api/settings` | Read and update the store settings |
+| `GET/POST /api/products`, `PUT/DELETE /api/products/:id` | Product catalogue |
+| `POST /api/products/:id/stock` | Add units to a product's stock |
+| `GET/POST /api/customers`, `PUT/DELETE /api/customers/:id` | Customer profiles |
+| `GET/POST /api/sales`, `DELETE /api/sales/:id` | Sales and returns |
+| `POST /api/sales/:id/payments` | Record money received against a credit invoice |
+| `GET/POST /api/expenses`, `PUT/DELETE /api/expenses/:id` | Expenses |
 
-- `GET/POST/PUT /api/products`
-- `GET/POST/PUT /api/customers`
-- `GET/POST /api/sales`
-- `GET/POST /api/payments`
-- `GET/PUT /api/settings`
-
-After the frontend uses those routes, `app_state` can be retired safely.
+Prices, totals and stock are computed on the server inside a transaction, so the
+browser cannot set a price or oversell a product.
 
 ---
 
