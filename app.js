@@ -231,6 +231,10 @@ function uid(prefix) {
   return `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
 }
 
+function plural(count, word, suffix = 's') {
+  return `${count} ${word}${Math.abs(count) > 1 ? suffix : ''}`;
+}
+
 function showMessage(elementId, text, type = 'info') {
   const target = document.getElementById(elementId);
   if (!target) return;
@@ -775,7 +779,7 @@ function renderCart() {
   const cartContainer = document.getElementById('cart-items');
   const cartCount = document.getElementById('cart-count');
   const totalItems = cart.reduce((total, item) => total + item.quantity, 0);
-  cartCount.textContent = `${totalItems} article${totalItems === 1 ? '' : 's'}`;
+  cartCount.textContent = plural(totalItems, 'article');
   if (!cart.length) {
     cartContainer.innerHTML = EMPTY_CART_MESSAGES[posMode];
     document.getElementById('subtotal-value').textContent = formatMoney(0);
@@ -2115,7 +2119,7 @@ function completeSale() {
     pendingSale = { type: 'waste', reason, totalAmount, items: structuredClone(cart) };
     document.getElementById('sale-confirm-title').textContent = 'Enregistrer cette perte ?';
     document.getElementById('sale-confirm-text').textContent =
-      `${formatMoney(totalAmount)} · ${cart.length} article${cart.length === 1 ? '' : 's'} · Motif : ${reason} · Retiré du stock`;
+      `${formatMoney(totalAmount)} · ${plural(cart.length, 'article')} · Motif : ${reason} · Retiré du stock`;
     document.getElementById('sale-confirm-modal').classList.remove('hidden');
     return;
   }
@@ -2127,7 +2131,7 @@ function completeSale() {
     const customer = customerId ? getCustomerById(customerId) : null;
     document.getElementById('sale-confirm-title').textContent = 'Finaliser ce retour ?';
     document.getElementById('sale-confirm-text').textContent =
-      `${formatMoney(totalAmount)} · ${cart.length} article${cart.length === 1 ? '' : 's'} · Retour · ${customer ? customer.name : 'Client de passage'}`;
+      `${formatMoney(totalAmount)} · ${plural(cart.length, 'article')} · Retour · ${customer ? customer.name : 'Client de passage'}`;
     document.getElementById('sale-confirm-modal').classList.remove('hidden');
     return;
   }
@@ -2147,7 +2151,7 @@ function completeSale() {
   pendingSale = { type: 'sale', customerId: customerId || null, paymentMethod, partialAmount, totalAmount, items: structuredClone(cart) };
   const paymentLabel = paymentMethod === 'cash' ? 'Vente comptant' : paymentMethod === 'partial' ? `Paiement partiel · ${formatMoney(partialAmount)} payé maintenant` : 'Vente à crédit';
   document.getElementById('sale-confirm-title').textContent = 'Finaliser cette vente ?';
-  document.getElementById('sale-confirm-text').textContent = `${formatMoney(totalAmount)} · ${cart.length} article${cart.length === 1 ? '' : 's'} · ${paymentLabel}`;
+  document.getElementById('sale-confirm-text').textContent = `${formatMoney(totalAmount)} · ${plural(cart.length, 'article')} · ${paymentLabel}`;
   document.getElementById('sale-confirm-modal').classList.remove('hidden');
 }
 
@@ -2298,7 +2302,7 @@ function renderPurchaseCart() {
   if (!container) return;
   const count = document.getElementById('purchase-count');
   const units = purchaseCart.reduce((total, item) => total + item.quantity, 0);
-  if (count) count.textContent = `${units} article${units === 1 ? '' : 's'}`;
+  if (count) count.textContent = plural(units, 'article');
 
   if (!purchaseCart.length) {
     container.innerHTML = '<div class="empty-cart"><span class="empty-cart-icon">&#8595;</span><strong>Aucun achat en cours</strong><p>Ajoutez les produits reçus du fournisseur.</p></div>';
@@ -2590,7 +2594,7 @@ function reportTiles(summary) {
     ['Encaissé', formatMoney(summary.cashIn), 'Ventes réglées et dettes payées'],
     ['Décaissé', formatMoney(summary.cashOut), 'Achats, dépenses et remboursements'],
     ['Solde net', formatMoney(summary.net), summary.net >= 0 ? 'Excédent sur la période' : 'Déficit sur la période'],
-    ['Valeur des pertes', formatMoney(summary.wasteValue), `${summary.unitsWasted} article${summary.unitsWasted === 1 ? '' : 's'} retiré${summary.unitsWasted === 1 ? '' : 's'}`]
+    ['Valeur des pertes', formatMoney(summary.wasteValue), `${plural(summary.unitsWasted, 'article')} retiré${Math.abs(summary.unitsWasted) > 1 ? 's' : ''}`]
   ];
   const stock = [
     ['Vendus', summary.unitsSold, formatMoney(summary.salesValue)],
@@ -2665,7 +2669,7 @@ function renderReports() {
   const summary = summariseReport(rows);
 
   container.innerHTML = `
-    <p class="report-period">${escapeHtml(reportPeriodLabel())} · ${summary.count} mouvement${summary.count === 1 ? '' : 's'}</p>
+    <p class="report-period">${escapeHtml(reportPeriodLabel())} · ${plural(summary.count, 'mouvement')}</p>
     ${reportTiles(summary)}
     ${reportTable(rows)}`;
 }
