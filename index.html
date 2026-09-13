@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>H.H Fruit &ndash; Gestion des stocks et des ventes</title>
-    <link rel="stylesheet" href="/styles.css?v=27" />
+    <link rel="stylesheet" href="/styles.css?v=33" />
   </head>
   <body>
     <div class="app-shell">
@@ -15,14 +15,9 @@
         </div>
 
         <nav class="nav-menu">
-          <button class="nav-btn active" data-tab="dashboard">Tableau de bord</button>
-          <button class="nav-btn" data-tab="pos">Ventes / Caisse</button>
-          <button class="nav-btn" data-tab="purchases">Achats</button>
-          <button class="nav-btn" data-tab="sales-history">Historique des ventes</button>
-          <button class="nav-btn" data-tab="products">Produits</button>
+          <button class="nav-btn active" data-tab="pos">Caisse</button>
+          <button class="nav-btn" data-tab="stock">Stock</button>
           <button class="nav-btn" data-tab="customers">Clients</button>
-          <button class="nav-btn" data-tab="debts">Dettes clients</button>
-          <button class="nav-btn" data-tab="expenses">Dépenses</button>
           <button class="nav-btn" data-tab="reports">Rapports</button>
         </nav>
 
@@ -30,68 +25,7 @@
       </aside>
 
       <main class="main-panel">
-        <section id="dashboard" class="tab-panel active">
-          <header class="panel-header">
-            <div>
-              <p class="eyebrow">Vue d’ensemble</p>
-              <h2>Tableau de bord</h2>
-            </div>
-          </header>
-
-          <div class="stats-grid">
-            <div class="stat-card income-card">
-              <div class="stat-card-top">
-                <span class="label" id="income-stat-label">Recettes du jour</span>
-                <button type="button" id="income-range-toggle" class="icon-btn" aria-label="Choisir une période" title="Choisir une période">
-                  <span aria-hidden="true">&#128197;</span>
-                </button>
-              </div>
-              <strong class="value" id="income-stat-value">0 F CFA</strong>
-              <div id="income-range-panel" class="income-range-panel hidden">
-                <div class="range-options">
-                  <button type="button" class="range-option active" data-range="today">Aujourd’hui</button>
-                  <button type="button" class="range-option" data-range="week">Cette semaine</button>
-                  <button type="button" class="range-option" data-range="custom">Période personnalisée</button>
-                </div>
-                <div id="income-custom-range" class="income-custom-range hidden">
-                  <label>Du<input type="date" id="income-range-start" /></label>
-                  <label>Au<input type="date" id="income-range-end" /></label>
-                  <button type="button" id="income-range-apply" class="primary-btn compact-btn">Appliquer</button>
-                </div>
-              </div>
-            </div>
-            <div class="stat-card">
-              <span class="label">Total dû</span>
-              <strong class="value" id="stat-amount-owed">0 F CFA</strong>
-            </div>
-            <div class="stat-card">
-              <span class="label">Stock faible</span>
-              <strong class="value" id="stat-low-stock">0</strong>
-            </div>
-            <div class="stat-card">
-              <span class="label" id="sales-count-label">Ventes du jour</span>
-              <strong class="value" id="stat-checkouts-today">0</strong>
-            </div>
-          </div>
-
-          <div class="grid-two">
-            <div class="card">
-              <div class="card-header">
-                <h3 id="recent-sales-title">Ventes du jour</h3>
-              </div>
-              <div id="recent-sales-list" class="list-stack"></div>
-            </div>
-
-            <div class="card">
-              <div class="card-header">
-                <h3>Stock faible</h3>
-              </div>
-              <div id="low-stock-list" class="list-stack"></div>
-            </div>
-          </div>
-        </section>
-
-        <section id="pos" class="tab-panel">
+        <section id="pos" class="tab-panel active">
           <header class="panel-header pos-page-header">
             <div>
               <p class="eyebrow">Point de vente</p>
@@ -196,46 +130,22 @@
           </div>
         </section>
 
-        <section id="sales-history" class="tab-panel">
-          <header class="panel-header">
-            <div>
-              <p class="eyebrow">Transactions</p>
-              <h2>Historique des ventes</h2>
-            </div>
-          </header>
-
-          <div class="filter-row">
-            <div class="history-customer-picker">
-              <label for="history-customer-filter">Client</label>
-              <input id="history-customer-filter" type="search" placeholder="Rechercher un nom ou un téléphone" autocomplete="off" />
-              <div id="history-customer-suggestions" class="history-suggestions hidden" translate="no"></div>
-            </div>
-            <input id="history-date-filter" type="date" />
-            <select id="history-payment-filter">
-              <option value="all">Toutes les transactions</option>
-              <option value="cash">Espèces</option>
-              <option value="debt">Crédit</option>
-              <option value="return">Retours</option>
-            </select>
-          </div>
-
-          <div id="sales-history-list" class="table-wrap" translate="no"></div>
-        </section>
-
-        <section id="products" class="tab-panel">
+        <section id="stock" class="tab-panel">
           <header class="panel-header products-page-header">
             <div>
               <p class="eyebrow">Gestion des stocks</p>
-              <h2>Produits</h2>
-              <p class="page-subtitle">Gérez votre catalogue, vos prix et vos stocks au même endroit.</p>
+              <h2>Stock</h2>
+              <p class="page-subtitle">Votre catalogue, vos prix, et les livraisons que vous recevez.</p>
             </div>
             <button id="add-product-btn" type="button" class="primary-btn product-add-btn" aria-label="Ajouter un produit" title="Ajouter un produit">+</button>
           </header>
 
-          <div class="business-product-strip" aria-label="Sélection de fruits H.H Fruit">
-            <div class="business-product-strip-copy"><span class="section-kicker">Sélection H.H Fruit</span><strong>Fruits frais et produits de saison</strong></div>
+          <div class="scope-toggle" role="group" aria-label="Vue du stock">
+            <button type="button" class="scope-btn active" data-stock-scope="catalogue" aria-pressed="true">Catalogue</button>
+            <button type="button" class="scope-btn" data-stock-scope="purchases" aria-pressed="false">Achats</button>
           </div>
 
+          <div id="stock-catalogue" class="stock-view">
           <div class="products-toolbar">
             <label class="product-search-field">
               <span>Rechercher dans le stock</span>
@@ -318,87 +228,9 @@
               </div>
             </div>
           </div>
-        </section>
-
-        <section id="customers" class="tab-panel">
-          <header class="panel-header">
-            <div>
-              <p class="eyebrow">Contacts</p>
-              <h2>Clients</h2>
-            </div>
-          </header>
-
-          <div id="client-route-view"></div>
-        </section>
-
-        <section id="expenses" class="tab-panel">
-          <header class="panel-header expenses-page-header">
-            <div>
-              <p class="eyebrow">Sorties d’argent</p>
-              <h2>Dépenses</h2>
-              <p class="page-subtitle">Enregistrez et suivez l’argent dépensé par la boutique.</p>
-            </div>
-            <button id="add-expense-btn" type="button" class="primary-btn">+ Nouvelle dépense</button>
-          </header>
-
-          <div class="expenses-summary">
-            <div class="stat-card">
-              <span class="label">Total des dépenses</span>
-              <strong class="value" id="expenses-total">0 F CFA</strong>
-              <span class="subtle" id="expenses-count">0 dépense</span>
-            </div>
           </div>
 
-          <div class="filter-row expenses-filter-row">
-            <label class="expense-filter-field">
-              <span>Type de dépense</span>
-              <select id="expense-type-filter">
-                <option value="all">Tous</option>
-                <option value="Salaires">Salaires</option>
-                  <option value="Réparation / Maintenance">Réparation / Maintenance</option>
-                <option value="Amélioration / Mise à niveau">Amélioration / Mise à niveau</option>
-                <option value="Autre">Autre</option>
-              </select>
-            </label>
-            <label class="expense-filter-field">
-              <span>Date</span>
-              <select id="expense-date-filter">
-                <option value="all">Toutes les dates</option>
-                <option value="today">Aujourd’hui</option>
-                <option value="week">Cette semaine</option>
-                <option value="custom">Période personnalisée</option>
-              </select>
-            </label>
-            <div id="expense-custom-range" class="expense-custom-range hidden">
-              <label><span>Date de début</span><input type="date" id="expense-range-start" /></label>
-              <label><span>Date de fin</span><input type="date" id="expense-range-end" /></label>
-            </div>
-          </div>
-
-          <div id="expenses-list" class="table-wrap expenses-table-wrap" translate="no"></div>
-        </section>
-
-        <section id="debts" class="tab-panel">
-          <header class="panel-header">
-            <div>
-              <p class="eyebrow">Grand livre</p>
-              <h2>Dettes clients</h2>
-            </div>
-          </header>
-
-          <div id="debt-route-view"></div>
-        </section>
-
-        <section id="purchases" class="tab-panel">
-          <header class="panel-header">
-            <div>
-              <p class="eyebrow">Entrée de stock</p>
-              <h2 id="purchase-page-title">Nouvel achat</h2>
-              <p class="page-subtitle">Enregistrez une livraison fournisseur : les produits, ce qu’ils ont coûté, et le stock est mis à jour.</p>
-            </div>
-            <span class="status-pill">Achat</span>
-          </header>
-
+          <div id="stock-purchases" class="stock-view hidden">
           <div class="pos-layout">
             <div class="card product-area">
               <div class="card-header">
@@ -438,6 +270,18 @@
               </div>
             </div>
           </div>
+          </div>
+        </section>
+
+        <section id="customers" class="tab-panel">
+          <header class="panel-header">
+            <div>
+              <p class="eyebrow">Contacts</p>
+              <h2>Clients</h2>
+            </div>
+          </header>
+
+          <div id="client-route-view"></div>
         </section>
 
         <section id="reports" class="tab-panel">
@@ -447,7 +291,10 @@
               <h2>Rapports</h2>
               <p class="page-subtitle">Tous les mouvements d’une journée ou d’une période : ventes, achats, retours, pertes et dépenses.</p>
             </div>
-            <button type="button" id="export-report-btn" class="secondary-btn">Exporter en PDF</button>
+            <div class="report-header-actions">
+              <button type="button" id="add-expense-btn" class="secondary-btn">+ Nouvelle dépense</button>
+              <button type="button" id="export-report-btn" class="secondary-btn">Exporter en PDF</button>
+            </div>
           </header>
 
           <div class="card report-controls">
@@ -460,6 +307,12 @@
               <label id="report-day-field"><span>Date</span><input type="date" id="report-day" /></label>
               <label id="report-start-field" class="hidden"><span>Du</span><input type="date" id="report-start" /></label>
               <label id="report-end-field" class="hidden"><span>Au</span><input type="date" id="report-end" /></label>
+            </div>
+
+            <div class="report-customer-field">
+              <label for="report-customer">Client</label>
+              <input id="report-customer" type="search" placeholder="Tous les clients" autocomplete="off" />
+              <div id="report-customer-suggestions" class="history-suggestions hidden" translate="no"></div>
             </div>
 
             <div class="report-category-field">
@@ -631,6 +484,6 @@
       </form>
     </div>
 
-    <script src="/app.js?v=27"></script>
+    <script src="/app.js?v=33"></script>
   </body>
 </html>

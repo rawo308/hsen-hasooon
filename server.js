@@ -18,8 +18,9 @@ const pgConnectionString = databaseUrl?.replace(/([?&])sslmode=require(&?)/, (ma
 // NUMERIC arrives as a string by default, which would turn every total into
 // string concatenation on the way out.
 types.setTypeParser(types.builtins.NUMERIC, (value) => (value === null ? null : Number(value)));
-// DATE would otherwise become a Date at local midnight, which shifts the day
-// west of UTC. An expense date is a calendar day, so keep the text.
+// DATE would otherwise be turned into a Date, and reading it back through UTC
+// shifts the calendar day for any timezone that is not UTC -- Gabon is UTC+1. An
+// expense date is a calendar day, not an instant, so keep the text as sent.
 types.setTypeParser(types.builtins.DATE, (value) => value);
 
 // Credentials default to the store's fixed login but can be overridden per environment

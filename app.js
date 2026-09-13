@@ -28,7 +28,6 @@ let customerPurchaseRange = '30d';
 let customerPurchaseCustomRange = { start: '', end: '' };
 let customerPurchaseSummaryFilter = { mode: 'all', start: '', end: '' };
 let customerTransactionHistoryFilter = { mode: 'all', start: '', end: '' };
-let incomeRange = { mode: 'today' };
 let saleDiscountPercent = 0;
 // 'sale' keeps the original checkout untouched; 'return' records an independent
 // Retour transaction that puts stock back.
@@ -424,53 +423,6 @@ function getStartOfDay(date) {
   return new Date(date.getFullYear(), date.getMonth(), date.getDate());
 }
 
-function getStartOfWeek(date) {
-  const start = getStartOfDay(date);
-  const day = start.getDay();
-  start.setDate(start.getDate() - day);
-  return start;
-}
-
-// One date range drives every dashboard figure: the recettes total, the sales
-// count and the recent-sales card all read the labels returned here.
-function getIncomeRangeBounds() {
-  const now = new Date();
-  if (incomeRange.mode === 'week') {
-    return {
-      start: getStartOfWeek(now),
-      end: now,
-      label: 'Recettes de la semaine',
-      countLabel: 'Ventes de la semaine',
-      listLabel: 'Ventes de la semaine',
-      emptyLabel: 'Aucune vente cette semaine.'
-    };
-  }
-  if (incomeRange.mode === 'custom' && incomeRange.start && incomeRange.end) {
-    const start = getStartOfDay(new Date(incomeRange.start));
-    const end = new Date(incomeRange.end);
-    end.setHours(23, 59, 59, 999);
-    const period = start.getTime() === getStartOfDay(end).getTime()
-      ? start.toLocaleDateString('fr-FR')
-      : `${start.toLocaleDateString('fr-FR')} - ${end.toLocaleDateString('fr-FR')}`;
-    return {
-      start,
-      end,
-      label: `${period} - recettes`,
-      countLabel: `${period} - ventes`,
-      listLabel: `Ventes · ${period}`,
-      emptyLabel: 'Aucune vente sur cette période.'
-    };
-  }
-  return {
-    start: getStartOfDay(now),
-    end: now,
-    label: 'Recettes du jour',
-    countLabel: 'Ventes du jour',
-    listLabel: 'Ventes du jour',
-    emptyLabel: 'Aucune vente aujourd’hui.'
-  };
-}
-
 function getCartItemKey(productId) {
   return productId;
 }
@@ -486,105 +438,14 @@ function getOutstandingDebtList() {
 }
 
 function renderNav() {
-  const buttons = document.querySelectorAll('.nav-btn');
-  buttons.forEach((button) => {
+  document.querySelectorAll('.nav-btn').forEach((button) => {
     button.addEventListener('click', () => {
-      const target = button.dataset.tab;
-      if (target === 'debts') {
-        navigateDebt('/debts');
-        return;
-      }
-      if (target === 'customers') {
-        navigateClient('/clients');
-        return;
-      }
-      document.querySelectorAll('.nav-btn').forEach((nav) => nav.classList.toggle('active', nav === button));
-      document.querySelectorAll('.tab-panel').forEach((panel) => panel.classList.toggle('active', panel.id === target));
+      // Clients is the one tab with a URL of its own, so it goes through the
+      // router; the rest are plain panel swaps.
+      if (button.dataset.tab === 'customers') return navigateClient('/clients');
+      setActiveTab(button.dataset.tab);
     });
   });
-}
-
-function renderDashboard() {
-  const lowStock = state.products.filter((product) => product.stock <= getLowStockThreshold(product)).map((product) => ({ ...product, productName: product.name }));
-  // Each customer balance is the sum of what is still unpaid on their credit
-  // invoices, so settled invoices drop out on their own.
-  const debtTotal = state.customers.reduce((sum, customer) => sum + Number(customer.balance || 0), 0);
-
-  const { start, end, label, countLabel, listLabel, emptyLabel } = getIncomeRangeBounds();
-  // Only a sale is revenue. Returns, purchases, write-offs and stock corrections
-  // are all movements of their own and belong in Rapports, not in the takings.
-  const rangeSales = state.sales.filter((sale) => {
-    if (!isCustomerSale(sale)) return false;
-    const saleDate = new Date(sale.createdAt);
-    return saleDate >= start && saleDate <= end;
-  });
-  const rangeIncome = rangeSales.reduce((sum, sale) => sum + Number(sale.totalAmount || 0), 0);
-  const recentSales = rangeSales.slice(-5).reverse();
-
-  document.getElementById('income-stat-label').textContent = label;
-  document.getElementById('income-stat-value').textContent = formatMoney(rangeIncome);
-  document.getElementById('stat-amount-owed').textContent = formatMoney(debtTotal);
-  document.getElementById('stat-low-stock').textContent = lowStock.length;
-  document.getElementById('sales-count-label').textContent = countLabel;
-  document.getElementById('stat-checkouts-today').textContent = rangeSales.length;
-  document.getElementById('recent-sales-title').textContent = listLabel;
-
-  const recentHtml = recentSales.length
-    ? recentSales.map((sale) => {
-      const customer = getCustomerById(sale.customerId);
-      return `
-          <div class="list-item">
-            <div>
-              <strong>${customer ? customer.name : 'Client de passage'}</strong>
-              <small>${new Date(sale.createdAt).toLocaleString('fr-FR')}</small>
-            </div>
-            <div class="list-meta">
-              <strong>${formatMoney(sale.totalAmount)}</strong>
-              <span class="mini-pill ${sale.paymentMethod === 'debt' ? 'warning' : 'success'}">${sale.paymentMethod === 'debt' ? (sale.paymentType === 'partial' ? getInvoiceStatus(sale) : 'Crédit') : 'Espèces'}</span>
-            </div>
-          </div>
-        `;
-    }).join('')
-    : `<p class="empty-state">${emptyLabel}</p>`;
-
-  document.getElementById('recent-sales-list').innerHTML = recentHtml;
-
-  const lowStockHtml = lowStock.length
-    ? lowStock.map((product) => `
-        <div class="list-item compact">
-          <div>
-            <strong>${product.productName}</strong>
-            <small>${product.stock} restant(s) · seuil ${getLowStockThreshold(product)}</small>
-          </div>
-          <span class="mini-dot ${product.stock === 0 ? 'danger' : 'warning'}">${product.stock === 0 ? 'Rupture' : 'Faible'}</span>
-        </div>
-      `).join('')
-    : '<p class="empty-state">Le stock est suffisant pour tous les produits.</p>';
-
-  document.getElementById('low-stock-list').innerHTML = lowStockHtml;
-}
-
-function toggleIncomeRangePanel() {
-  document.getElementById('income-range-panel').classList.toggle('hidden');
-}
-
-function setIncomeRangeMode(mode) {
-  document.querySelectorAll('.range-option').forEach((button) => button.classList.toggle('active', button.dataset.range === mode));
-  document.getElementById('income-custom-range').classList.toggle('hidden', mode !== 'custom');
-  if (mode !== 'custom') {
-    incomeRange = { mode };
-    document.getElementById('income-range-panel').classList.add('hidden');
-    renderDashboard();
-  }
-}
-
-function applyCustomIncomeRange() {
-  const start = document.getElementById('income-range-start').value;
-  const end = document.getElementById('income-range-end').value;
-  if (!start || !end) return;
-  incomeRange = { mode: 'custom', start, end };
-  document.getElementById('income-range-panel').classList.add('hidden');
-  renderDashboard();
 }
 
 // Everything that distinguishes the register's three modes. Held as data so the
@@ -924,45 +785,57 @@ function renderPosCustomerField() {
 
 function renderProductsList() {
   const searchValue = document.getElementById('product-search')?.value?.toLowerCase() || '';
-
   const productList = state.products.filter((product) => product.name.toLowerCase().includes(searchValue));
 
   const listEl = document.getElementById('product-list');
   const totalUnits = state.products.reduce((sum, product) => sum + product.stock, 0);
   const summary = document.getElementById('products-summary');
-  if (summary) summary.textContent = `${productList.length} produit${productList.length === 1 ? '' : 's'} · ${totalUnits} unité(s) en stock`;
+  if (summary) summary.textContent = `${plural(productList.length, 'produit')} · ${plural(totalUnits, 'unité')} en stock`;
 
+  // A table rather than a stack of cards: the same five facts in a third of the
+  // height, so a catalogue of twenty is readable without scrolling.
   listEl.innerHTML = productList.length
-    ? productList.map((product) => {
-      const stock = product.stock;
-      const threshold = getLowStockThreshold(product);
-      const stockState = stock === 0 ? 'out' : stock <= threshold ? 'low' : 'healthy';
-      return `
-          <article class="product-row">
-            <div class="product-thumb" aria-hidden="true">${product.name.slice(0, 1).toUpperCase()}</div>
-            <div class="product-row-info">
-              <div class="product-row-title">
-                <h4>${product.name}</h4>
-              </div>
-              ${product.description ? `<p class="product-row-description">${product.description}</p>` : ''}
-            </div>
-            <div class="product-row-metric">
-              <span>Stock</span>
-              <strong>${stock}</strong>
-            </div>
-            <div class="product-row-metric">
-              <span>Prix</span>
-              <strong>${formatMoney(product.sellingPrice)}</strong>
-            </div>
-            <span class="stock-status ${stockState}">${stockState === 'out' ? 'Rupture de stock' : stockState === 'low' ? 'Stock faible' : 'En stock'}</span>
-            <div class="product-row-actions">
-              <button class="secondary-btn compact-btn" data-edit-product="${product.id}">Modifier</button>
-              <button class="link-btn danger-link" data-delete-product="${product.id}">Supprimer</button>
-            </div>
-          </article>
-        `;
-    }).join('')
-    : `<div class="products-empty-state"><div class="empty-state-icon">+</div><h4>Aucun produit trouvé</h4><p>Essayez une autre recherche ou ajoutez un produit au catalogue.</p><button type="button" class="secondary-btn" data-empty-add-product>Ajouter un produit</button></div>`;
+    ? `
+      <div class="table-wrap">
+        <table class="product-table">
+          <thead>
+            <tr>
+              <th>Produit</th>
+              <th class="product-num">Stock</th>
+              <th class="product-num">Prix</th>
+              <th>État</th>
+              <th class="row-actions-head" aria-label="Actions"></th>
+            </tr>
+          </thead>
+          <tbody>
+            ${productList.map((product) => {
+    const stock = product.stock;
+    const threshold = getLowStockThreshold(product);
+    const stockState = stock === 0 ? 'out' : stock <= threshold ? 'low' : 'healthy';
+    return `
+              <tr>
+                <td>
+                  <strong>${escapeHtml(product.name)}</strong>
+                  ${product.description ? `<small class="product-row-description">${escapeHtml(product.description)}</small>` : ''}
+                </td>
+                <td class="product-num"><strong>${stock}</strong></td>
+                <td class="product-num">${formatMoney(product.sellingPrice)}</td>
+                <td><span class="stock-status ${stockState}">${stockState === 'out' ? 'Rupture' : stockState === 'low' ? 'Stock faible' : 'En stock'}</span></td>
+                <td class="row-actions">
+                  <button class="link-btn" data-edit-product="${product.id}">Modifier</button>
+                  <button class="link-btn danger-link" data-delete-product="${product.id}">Supprimer</button>
+                </td>
+              </tr>`;
+  }).join('')}
+          </tbody>
+        </table>
+      </div>`
+    : `
+      <div class="empty-state-block">
+        <strong>Aucun produit trouvé</strong>
+        <p>Essayez une autre recherche, ou ajoutez un produit au catalogue.</p>
+        <button type="button" class="secondary-btn" data-empty-add-product>Ajouter un produit</button>
+      </div>`;
 
   listEl.querySelectorAll('[data-edit-product]').forEach((button) => {
     button.addEventListener('click', () => beginEditProduct(button.dataset.editProduct));
@@ -1122,7 +995,7 @@ function showCustomerProfile(customerId) {
   const rangedPurchases = getCustomerPurchasesForRange(customer.id, customerPurchaseRange);
   const rangedPurchaseTotal = rangedPurchases.reduce((sum, sale) => sum + Number(sale.totalAmount || 0), 0);
   const salesForCustomer = customerHistoryDateFilter
-    ? allSalesForCustomer.filter((sale) => new Date(sale.createdAt).toISOString().slice(0, 10) === customerHistoryDateFilter)
+    ? allSalesForCustomer.filter((sale) => matchesDateRangeFilter(sale.createdAt, { mode: 'day', start: customerHistoryDateFilter, end: customerHistoryDateFilter }))
     : allSalesForCustomer;
 
   const selectedSale = selectedCustomerInvoiceId
@@ -1143,7 +1016,7 @@ function showCustomerProfile(customerId) {
         <button class="purchase-row ${selectedSale && selectedSale.id === sale.id ? 'active' : ''}" data-open-sale="${sale.id}">
           <div class="purchase-row-info">
             <strong>Facture n°${sale.id.slice(-4)}</strong>
-            <small>${new Date(sale.createdAt).toLocaleString('fr-FR')} · ${sale.items.length} article${sale.items.length === 1 ? '' : 's'}</small>
+            <small>${new Date(sale.createdAt).toLocaleString('fr-FR')} · ${plural(sale.items.length, 'article')}</small>
           </div>
           <div class="purchase-row-amount">
             <strong>${formatMoney(sale.totalAmount)}</strong>
@@ -1256,7 +1129,7 @@ function showCustomerProfile(customerId) {
         <label class="purchase-range-control"><span>Période</span><select id="customer-purchase-range"><option value="today" ${customerPurchaseRange === 'today' ? 'selected' : ''}>Aujourd’hui</option><option value="7d" ${customerPurchaseRange === '7d' ? 'selected' : ''}>7 derniers jours</option><option value="30d" ${customerPurchaseRange === '30d' ? 'selected' : ''}>30 derniers jours</option><option value="custom" ${customerPurchaseRange === 'custom' ? 'selected' : ''}>Personnalisé</option></select></label>
         ${customPurchaseRangeHtml}
         <strong class="purchase-range-total">${formatMoney(rangedPurchaseTotal)}</strong>
-        <small>${rangedPurchases.length} achat${rangedPurchases.length === 1 ? '' : 's'} sur la période</small>
+        <small>${plural(rangedPurchases.length, 'achat')} sur la période</small>
       </div>
 
       <div class="profile-panel">
@@ -1346,6 +1219,12 @@ function setActiveTab(tabId) {
   document.querySelectorAll('.tab-panel').forEach((panel) => panel.classList.toggle('active', panel.id === tabId));
 }
 
+// /debts/* is the retired Dettes clients route; it resolves here now.
+function isCustomerPath() {
+  const path = window.location.pathname;
+  return path.startsWith('/clients') || path.startsWith('/debts');
+}
+
 function navigateClient(path) {
   window.history.pushState({}, '', path);
   setActiveTab('customers');
@@ -1354,7 +1233,9 @@ function navigateClient(path) {
 
 function getClientRoute() {
   const parts = window.location.pathname.split('/').filter(Boolean).map((part) => decodeURIComponent(part));
-  if (parts[0] !== 'clients') return { page: 'customers' };
+  // /debts was its own page until the debtor list became a filter here. Old links
+  // and bookmarks still resolve, they just land on the customer instead.
+  if (parts[0] !== 'clients' && parts[0] !== 'debts') return { page: 'customers' };
   if (parts.length === 1) return { page: 'customers' };
   if (parts.length >= 4 && parts[2] === 'invoices') return { page: 'invoice', customerId: parts[1], invoiceId: parts[3] };
   return { page: 'customer', customerId: parts[1] };
@@ -1371,10 +1252,18 @@ function renderClientRoute() {
   renderClientProfilePage(container, customer);
 }
 
+// 'debtors' is what the separate Dettes clients page used to be.
+let clientListScope = 'all';
+
 function renderClientsPage(container) {
+  const debtors = getOutstandingDebtList().length;
   container.innerHTML = `
     <div class="ledger-page">
       <div class="ledger-page-header"><div><p class="section-kicker">Clients</p><h3>Liste des clients</h3></div><button type="button" class="primary-btn compact-btn" data-add-client>+ Ajouter un client</button></div>
+      <div class="ledger-scope" role="group" aria-label="Filtrer les clients">
+        <button type="button" class="scope-btn${clientListScope === 'all' ? ' active' : ''}" data-client-scope="all" aria-pressed="${clientListScope === 'all'}">Tous <span>${state.customers.length}</span></button>
+        <button type="button" class="scope-btn${clientListScope === 'debtors' ? ' active' : ''}" data-client-scope="debtors" aria-pressed="${clientListScope === 'debtors'}">Débiteurs <span>${debtors}</span></button>
+      </div>
       <label class="ledger-search"><span>Rechercher un client ou un téléphone</span><input id="customer-search" type="search" placeholder="Rechercher un client ou un téléphone" /></label>
       <div id="customer-list" class="ledger-table ledger-customer-list" translate="no"></div>
     </div>
@@ -1382,20 +1271,27 @@ function renderClientsPage(container) {
   const search = container.querySelector('#customer-search');
   search.addEventListener('input', () => renderClientRows(container.querySelector('#customer-list'), search.value));
   container.querySelector('[data-add-client]').addEventListener('click', openCustomerEditor);
+  container.querySelectorAll('[data-client-scope]').forEach((button) => {
+    button.addEventListener('click', () => {
+      clientListScope = button.dataset.clientScope;
+      renderClientsPage(container);
+    });
+  });
   renderClientRows(container.querySelector('#customer-list'), '');
 }
 
 function renderClientRows(listEl, searchValue) {
   const query = searchValue.toLowerCase().trim();
-  const clients = state.customers.filter((customer) => `${customer.name} ${customer.phone}`.toLowerCase().includes(query));
+  const source = clientListScope === 'debtors' ? getOutstandingDebtList() : state.customers;
+  const clients = source.filter((customer) => `${customer.name} ${customer.phone}`.toLowerCase().includes(query));
   listEl.innerHTML = clients.length ? clients.map((customer) => `
     <button type="button" class="ledger-row customer-ledger-row" data-client-id="${customer.id}">
       <span class="ledger-primary"><strong>${customer.name}</strong><small>${customer.phone}</small></span>
       <span class="ledger-money ${Number(customer.balance) > 0 ? "" : "ledger-money-settled"}"><strong>${formatMoney(customer.balance)}</strong><small>Total dû</small></span>
-      <span class="ledger-count"><strong>${getCustomerCreditInvoices(customer.id, true).length}</strong><small>facture${getCustomerCreditInvoices(customer.id, true).length === 1 ? '' : 's'} impayée(s)</small></span>
+      <span class="ledger-count"><strong>${getCustomerCreditInvoices(customer.id, true).length}</strong><small>${getCustomerCreditInvoices(customer.id, true).length > 1 ? 'factures impayées' : 'facture impayée'}</small></span>
       <span class="ledger-arrow">›</span>
     </button>
-  `).join('') : '<p class="empty-state">Aucun client trouvé.</p>';
+  `).join('') : `<p class="empty-state">${clientListScope === 'debtors' ? 'Aucun client avec une dette restante.' : 'Aucun client trouvé.'}</p>`;
   listEl.querySelectorAll('[data-client-id]').forEach((button) => button.addEventListener('click', () => navigateClient(`/clients/${encodeURIComponent(button.dataset.clientId)}`)));
 }
 
@@ -1452,7 +1348,7 @@ function renderClientProfilePage(container, customer) {
         <div class="ledger-history-filter-wrap">
           <button type="button" class="calendar-icon-btn" data-history-toggle aria-label="Choisir une période pour l’historique des transactions">📅</button>
           ${historyPicker}
-          <span>${transactionHistoryRows.length} transaction${transactionHistoryRows.length === 1 ? '' : 's'}</span>
+          <span>${plural(transactionHistoryRows.length, 'transaction')}</span>
         </div>
       </div>
       <div class="ledger-table ledger-invoice-list">
@@ -1539,195 +1435,6 @@ function renderClientInvoicePage(container, customer, invoiceId) {
   container.querySelector('[data-client-back]')?.addEventListener('click', () => navigateClient(`/clients/${encodeURIComponent(customer.id)}`));
 }
 
-function navigateDebt(path) {
-  window.history.pushState({}, '', path);
-  setActiveTab('debts');
-  renderDebtRoute();
-}
-
-function getDebtRoute() {
-  const parts = window.location.pathname.split('/').filter(Boolean).map((part) => decodeURIComponent(part));
-  if (parts[0] !== 'debts') return { page: 'customers' };
-  if (parts.length === 1) return { page: 'customers' };
-  if (parts.length === 3 && parts[2] === 'invoices') return { page: 'customer', customerId: parts[1] };
-  if (parts.length >= 4 && parts[2] === 'invoices') return { page: 'invoice', customerId: parts[1], invoiceId: parts[3] };
-  return { page: 'customer', customerId: parts[1] };
-}
-
-function renderDebtRoute() {
-  const container = document.getElementById('debt-route-view');
-  if (!container) return;
-  const route = getDebtRoute();
-  if (route.page === 'customers') return renderDebtCustomersPage(container);
-  const customer = getCustomerById(route.customerId);
-  if (!customer) return navigateDebt('/debts');
-  if (route.page === 'invoice') return renderDebtInvoicePage(container, customer, route.invoiceId);
-  renderDebtCustomerPage(container, customer);
-}
-
-function renderDebtCustomersPage(container) {
-  container.innerHTML = `
-    <div class="ledger-page ledger-customers-page">
-      <div class="ledger-page-header"><div><p class="section-kicker">Clients</p><h3>Clients débiteurs</h3></div><span class="subtle">${getOutstandingDebtList().length} client${getOutstandingDebtList().length === 1 ? '' : 's'}</span></div>
-      <label class="ledger-search"><span>Rechercher un client ou un téléphone</span><input id="debt-customer-search" type="search" placeholder="Rechercher un client ou un téléphone" /></label>
-      <div id="debt-list" class="ledger-table ledger-customer-list" translate="no"></div>
-    </div>
-  `;
-  const search = container.querySelector('#debt-customer-search');
-  search.addEventListener('input', () => renderDebtCustomerRows(container.querySelector('#debt-list'), search.value));
-  renderDebtCustomerRows(container.querySelector('#debt-list'), '');
-}
-
-function renderDebtCustomerRows(listEl, searchValue) {
-  const query = searchValue.toLowerCase().trim();
-  const customers = getOutstandingDebtList().filter((customer) => `${customer.name} ${customer.phone}`.toLowerCase().includes(query));
-  listEl.innerHTML = customers.length ? customers.map((customer) => `
-    <button type="button" class="ledger-row customer-ledger-row" data-customer-id="${customer.id}">
-      <span class="ledger-primary"><strong>${customer.name}</strong><small>${customer.phone}</small></span>
-      <span class="ledger-money ${Number(customer.balance) > 0 ? "" : "ledger-money-settled"}"><strong>${formatMoney(customer.balance)}</strong><small>Total dû</small></span>
-      <span class="ledger-count"><strong>${getCustomerCreditInvoices(customer.id, true).length}</strong><small>facture${getCustomerCreditInvoices(customer.id, true).length === 1 ? '' : 's'} impayée(s)</small></span>
-      <span class="ledger-arrow">›</span>
-    </button>
-  `).join('') : '<p class="empty-state">Aucun client avec une dette restante.</p>';
-  listEl.querySelectorAll('[data-customer-id]').forEach((button) => button.addEventListener('click', () => navigateDebt(`/debts/${encodeURIComponent(button.dataset.customerId)}`)));
-}
-
-function renderDebtCustomerPage(container, customer) {
-  const invoices = getCustomerCreditInvoices(customer.id, true);
-  container.innerHTML = `
-    <div class="ledger-page">
-      <div class="ledger-page-header"><button type="button" class="ledger-back-btn" data-debt-back>← Dettes clients</button></div>
-      <div class="ledger-entity-header"><div><p class="section-kicker">Dette client</p><h3>${customer.name}</h3><span class="subtle">${customer.phone}</span></div><div class="ledger-entity-stats"><div><span>Total dû</span><strong>${formatMoney(customer.balance)}</strong></div><div><span>Factures impayées</span><strong>${invoices.length}</strong></div></div></div>
-      <div class="ledger-section-heading"><h4>Factures impayées</h4><span>${invoices.length} facture${invoices.length === 1 ? '' : 's'}</span></div>
-      <div class="ledger-table ledger-invoice-list">
-        ${invoices.length ? invoices.map((invoice) => `
-          <button type="button" class="ledger-row invoice-ledger-row" data-invoice-id="${invoice.id}">
-            <span><strong>Facture n°${invoice.id.slice(-4)}</strong><small>${new Date(invoice.createdAt).toLocaleDateString('fr-FR')}</small></span>
-            <span><strong>${formatMoney(invoice.totalAmount)}</strong><small>Total</small></span>
-            <span><strong>${formatMoney(getInvoicePaidAmount(invoice))}</strong><small>Payé</small></span>
-            <span class="ledger-remaining"><strong>${formatMoney(getInvoiceRemainingAmount(invoice))}</strong><small>Reste à payer</small></span>
-            <span><b class="ledger-status">${getInvoiceStatus(invoice)}</b></span><span class="ledger-arrow">›</span>
-          </button>
-        `).join('') : '<p class="empty-state">Ce client n’a aucune facture impayée.</p>'}
-      </div>
-    </div>
-  `;
-  container.querySelector('[data-debt-back]')?.addEventListener('click', () => navigateDebt('/debts'));
-  container.querySelectorAll('[data-invoice-id]').forEach((button) => button.addEventListener('click', () => navigateDebt(`/debts/${encodeURIComponent(customer.id)}/invoices/${encodeURIComponent(button.dataset.invoiceId)}`)));
-}
-
-function renderDebtInvoicePage(container, customer, invoiceId) {
-  const invoice = state.sales.find((sale) => sale.id === invoiceId && sale.customerId === customer.id);
-  if (!invoice) return navigateDebt(`/debts/${encodeURIComponent(customer.id)}`);
-  const payments = customer.debtHistory.filter((entry) => entry.type === 'payment' && entry.saleId === invoice.id).sort((a, b) => new Date(b.date) - new Date(a.date));
-  container.innerHTML = `
-    <div class="ledger-page ledger-invoice-page">
-      <div class="ledger-page-header"><button type="button" class="ledger-back-btn" data-debt-back>← Factures impayées de ${customer.name}</button></div>
-      <div class="ledger-entity-header"><div><p class="section-kicker">Détails de la facture</p><h3>Facture n°${invoice.id.slice(-4)}</h3><span class="subtle">${new Date(invoice.createdAt).toLocaleString('fr-FR')} · ${customer.name}</span></div><b class="ledger-status">${getInvoiceStatus(invoice)}</b></div>
-      <table class="ledger-detail-items"><thead><tr><th>Produit</th><th>Quantité</th><th>Prix unitaire</th><th>Total</th></tr></thead><tbody>${invoice.items.map((item) => `<tr><td>${item.productName}</td><td>${item.quantity}</td><td>${formatMoney(item.unitPrice)}</td><td>${formatMoney(item.subtotal)}</td></tr>`).join('')}</tbody></table>
-      <div class="ledger-financial-summary">${invoice.discountPercent > 0 ? `<div><span>Remise (${invoice.discountPercent} %)</span><strong>-${formatMoney(invoice.discount)}</strong></div>` : ''}<div><span>Total de la facture</span><strong>${formatMoney(invoice.totalAmount)}</strong></div><div><span>Total payé</span><strong>${formatMoney(getInvoicePaidAmount(invoice))}</strong></div><div><span>Reste à payer</span><strong>${formatMoney(getInvoiceRemainingAmount(invoice))}</strong></div></div>
-      <div class="ledger-payment-history"><h4>Historique des paiements</h4>${payments.length ? payments.map((payment) => `<div><span>${new Date(payment.date).toLocaleString('fr-FR')}</span><strong>${formatMoney(payment.amount)}</strong></div>`).join('') : '<p class="empty-state">Aucun paiement enregistré pour cette facture.</p>'}</div>
-      ${getInvoiceRemainingAmount(invoice) > 0 ? `<form id="payment-form" class="ledger-payment-form"><input id="payment-customer-select" type="hidden" value="${customer.id}" /><input id="payment-invoice-select" type="hidden" value="${invoice.id}" /><label>Enregistrer un paiement<input id="payment-amount" type="number" step="0.01" min="0.01" max="${getInvoiceRemainingAmount(invoice)}" placeholder="Montant du paiement" required /></label><button type="submit" class="primary-btn">Enregistrer le paiement</button><div id="payment-message" class="message-box"></div></form>` : '<p class="ledger-paid-note">Cette facture est entièrement payée.</p>'}
-    </div>
-  `;
-  container.querySelector('[data-debt-back]')?.addEventListener('click', () => navigateDebt(`/debts/${encodeURIComponent(customer.id)}`));
-  container.querySelector('#payment-form')?.addEventListener('submit', recordPayment);
-}
-
-function renderSalesHistory() {
-  const customerFilter = document.getElementById('history-customer-filter').value.toLowerCase();
-  const dateFilter = document.getElementById('history-date-filter').value;
-  const paymentFilter = document.getElementById('history-payment-filter').value;
-
-  const filtered = state.sales.filter((sale) => {
-    if (!isCustomerSale(sale) && !isReturn(sale)) return false;
-    const customer = getCustomerById(sale.customerId);
-    const customerMatch = !customerFilter || (customer && customer.name.toLowerCase().includes(customerFilter));
-    const dateMatch = !dateFilter || new Date(sale.createdAt).toISOString().slice(0, 10) === dateFilter;
-    // Returns carry no payment method, so they only survive the "all" and
-    // "return" options rather than falling through every cash/credit filter.
-    const paymentMatch = paymentFilter === 'all'
-      || (paymentFilter === 'return' ? isReturn(sale) : !isReturn(sale) && sale.paymentMethod === paymentFilter);
-    return customerMatch && dateMatch && paymentMatch;
-  }).reverse();
-
-  const list = document.getElementById('sales-history-list');
-  list.innerHTML = `<table>
-    <thead>
-      <tr>
-        <th>Date</th>
-        <th>Type</th>
-        <th>Client</th>
-        <th>Articles</th>
-        <th>Total</th>
-        <th>Paiement</th>
-        <th>Actions</th>
-      </tr>
-    </thead>
-    <tbody>
-      ${filtered.map((sale) => {
-    const customer = getCustomerById(sale.customerId);
-    const returning = isReturn(sale);
-    return `
-          <tr class="${returning ? 'history-return-row' : ''}">
-            <td>${new Date(sale.createdAt).toLocaleDateString('fr-FR')}</td>
-            <td><span class="mini-pill ${returning ? 'return' : 'neutral'}">${returning ? 'Retour' : 'Vente'}</span></td>
-            <td>${customer ? customer.name : 'Client de passage'}</td>
-            <td>${sale.items.length}</td>
-            <td>${formatMoney(sale.totalAmount)}</td>
-            <td>${returning ? '<span class="subtle">—</span>' : `<span class="mini-pill ${sale.paymentMethod === 'debt' ? 'warning' : 'success'}">${sale.paymentMethod === 'debt' ? (sale.paymentType === 'partial' ? getInvoiceStatus(sale) : 'Crédit') : 'Espèces'}</span>`}</td>
-            <td class="history-actions">
-              <button class="link-btn" data-view-sale="${sale.id}">Voir</button>
-              <button class="link-btn danger-link" data-delete-sale="${sale.id}">Supprimer</button>
-            </td>
-          </tr>
-        `;
-  }).join('') || '<tr><td colspan="7">Aucune transaction trouvée.</td></tr>'}
-    </tbody>
-  </table>`;
-
-  list.querySelectorAll('[data-view-sale]').forEach((button) => {
-    button.addEventListener('click', () => openReceipt(button.dataset.viewSale));
-  });
-
-  list.querySelectorAll('[data-delete-sale]').forEach((button) => {
-    button.addEventListener('click', () => openDeleteSaleConfirmation(button.dataset.deleteSale));
-  });
-}
-
-function renderHistoryCustomerSuggestions() {
-  const input = document.getElementById('history-customer-filter');
-  const suggestions = document.getElementById('history-customer-suggestions');
-  const query = input.value.toLowerCase().trim();
-  const matches = state.customers.filter((customer) => `${customer.name} ${customer.phone}`.toLowerCase().includes(query)).slice(0, 6);
-
-  if (!query || !matches.length) {
-    suggestions.innerHTML = '';
-    suggestions.classList.add('hidden');
-    renderSalesHistory();
-    return;
-  }
-
-  suggestions.innerHTML = matches.map((customer) => `
-    <button type="button" class="history-suggestion" data-history-customer="${customer.id}">
-      <strong>${customer.name}</strong>
-      <small>${customer.phone}</small>
-    </button>
-  `).join('');
-  suggestions.classList.remove('hidden');
-
-  suggestions.querySelectorAll('[data-history-customer]').forEach((button) => {
-    button.addEventListener('click', () => {
-      const customer = getCustomerById(button.dataset.historyCustomer);
-      input.value = customer.name;
-      suggestions.classList.add('hidden');
-      renderSalesHistory();
-    });
-  });
-
-  renderSalesHistory();
-}
-
 // The business identity printed on every invoice. It is the legal header from
 // the pre-printed pads, so it belongs to the company rather than to a setting;
 // anything the store settings do fill in still wins over these.
@@ -1754,10 +1461,14 @@ function escapeHtml(value) {
   ));
 }
 
+const INVOICE_CURRENCY = 'F CFA';
 const invoiceAmountFormat = new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 0 });
 const invoiceQuantityFormat = new Intl.NumberFormat('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 // Cells carry bare numbers; the currency is named once, in the column header.
 const invoiceAmount = (value) => invoiceAmountFormat.format(Number(value || 0));
+// Line cells stay bare so the columns stay narrow -- the unit is named in their
+// headers. The figures someone reads on their own, the banded totals, carry it.
+const invoiceAmountWithUnit = (value) => `${invoiceAmount(value)} ${INVOICE_CURRENCY}`;
 
 // The catalogue has no SKU column, so a line's reference is the tail of the
 // product's own id: stable, unique, and it survives a rename.
@@ -1813,14 +1524,14 @@ function openReceipt(saleId) {
     ? `
           <div class="inv-total-line"><span>TOTAL HT</span><strong>${invoiceAmount(subtotal)}</strong></div>
           <div class="inv-total-line"><span>TOTAL REMISE</span><strong>${invoiceAmount(discount)}</strong></div>
-          <div class="inv-total-line inv-total-ttc"><span>TOTAL TTC</span><strong>${invoiceAmount(sale.totalAmount)}</strong></div>
-          <div class="inv-total-line inv-total-net"><span>MONTANT DU RETOUR</span><strong>${invoiceAmount(sale.totalAmount)}</strong></div>`
+          <div class="inv-total-line inv-total-ttc"><span>TOTAL TTC</span><strong>${invoiceAmountWithUnit(sale.totalAmount)}</strong></div>
+          <div class="inv-total-line inv-total-net"><span>MONTANT DU RETOUR</span><strong>${invoiceAmountWithUnit(sale.totalAmount)}</strong></div>`
     : `
           <div class="inv-total-line"><span>TOTAL HT</span><strong>${invoiceAmount(subtotal)}</strong></div>
           <div class="inv-total-line"><span>TOTAL REMISE${discountPercent > 0 ? ` (${invoiceAmount(discountPercent)} %)` : ''}</span><strong>${invoiceAmount(discount)}</strong></div>
-          <div class="inv-total-line inv-total-ttc"><span>TOTAL TTC</span><strong>${invoiceAmount(sale.totalAmount)}</strong></div>
+          <div class="inv-total-line inv-total-ttc"><span>TOTAL TTC</span><strong>${invoiceAmountWithUnit(sale.totalAmount)}</strong></div>
           <div class="inv-total-line"><span>RÈGLEMENT</span><strong>${invoiceAmount(settled)}</strong></div>
-          <div class="inv-total-line inv-total-net"><span>NET À PAYER</span><strong>${invoiceAmount(netToPay)}</strong></div>`;
+          <div class="inv-total-line inv-total-net"><span>NET À PAYER</span><strong>${invoiceAmountWithUnit(netToPay)}</strong></div>`;
 
   document.getElementById('receipt-content').innerHTML = `
     <div class="invoice-document${returning ? ' invoice-return-document' : ''}">
@@ -1874,8 +1585,8 @@ function openReceipt(saleId) {
             <th class="inv-cell-ref">RÉFÉRENCE</th>
             <th class="inv-cell-name">DÉSIGNATION</th>
             <th class="inv-cell-num">QTÉ</th>
-            <th class="inv-cell-num">PRIX U. TTC</th>
-            <th class="inv-cell-num">MONTANT</th>
+            <th class="inv-cell-num">PRIX U. TTC<small>${INVOICE_CURRENCY}</small></th>
+            <th class="inv-cell-num">MONTANT<small>${INVOICE_CURRENCY}</small></th>
           </tr>
         </thead>
         <tbody>${itemRows}</tbody>
@@ -1892,7 +1603,7 @@ function openReceipt(saleId) {
       <section class="inv-closing">
         <table class="inv-tax">
           <thead>
-            <tr><th>CODE</th><th>BASE</th><th>TAUX</th><th>MONTANT</th></tr>
+            <tr><th>CODE</th><th>BASE<small>${INVOICE_CURRENCY}</small></th><th>TAUX</th><th>MONTANT<small>${INVOICE_CURRENCY}</small></th></tr>
           </thead>
           <tbody>
             <tr><td>Total</td><td>0</td><td>0</td><td>0</td></tr>
@@ -2404,7 +2115,24 @@ async function completePurchase() {
   }
 }
 
+function setStockScope(scope) {
+  const next = scope === 'purchases' ? 'purchases' : 'catalogue';
+  document.querySelectorAll('[data-stock-scope]').forEach((button) => {
+    const active = button.dataset.stockScope === next;
+    button.classList.toggle('active', active);
+    button.setAttribute('aria-pressed', String(active));
+  });
+  document.getElementById('stock-catalogue')?.classList.toggle('hidden', next !== 'catalogue');
+  document.getElementById('stock-purchases')?.classList.toggle('hidden', next !== 'purchases');
+  // The "+" in the page header creates a product, which only makes sense on the
+  // catalogue side.
+  document.getElementById('add-product-btn')?.classList.toggle('hidden', next !== 'catalogue');
+}
+
 function setupPurchaseListeners() {
+  document.querySelectorAll('[data-stock-scope]').forEach((button) => {
+    button.addEventListener('click', () => setStockScope(button.dataset.stockScope));
+  });
   document.getElementById('purchase-product-search')?.addEventListener('input', renderPurchaseProducts);
   document.getElementById('complete-purchase-btn')?.addEventListener('click', completePurchase);
 }
@@ -2442,7 +2170,7 @@ const REPORT_CATEGORIES = {
   adjustment: ['adjustment']
 };
 
-let reportFilters = { mode: 'day', day: '', start: '', end: '', category: 'all' };
+let reportFilters = { mode: 'day', day: '', start: '', end: '', category: 'all', customerId: '' };
 
 // The date filter this page is currently describing, in the shape the shared
 // matchesDateRangeFilter() helper expects.
@@ -2482,6 +2210,9 @@ function getReportRows() {
     const type = getTransactionType(sale);
     if (!REPORT_TYPES[type] || !allowed.has(type)) continue;
     if (!matchesDateRangeFilter(sale.createdAt, filter)) continue;
+    // Narrowing to one customer is a question about trade with them, so the
+    // movements that have no customer drop out rather than showing as noise.
+    if (reportFilters.customerId && sale.customerId !== reportFilters.customerId) continue;
 
     const customer = sale.customerId ? getCustomerById(sale.customerId) : null;
     rows.push({
@@ -2496,7 +2227,7 @@ function getReportRows() {
     });
   }
 
-  if (allowed.has('expense')) {
+  if (allowed.has('expense') && !reportFilters.customerId) {
     for (const expense of state.expenses) {
       if (!expenseWithinFilter(expense, filter)) continue;
       rows.push({
@@ -2575,7 +2306,11 @@ function summariseReport(rows) {
     unitsReturned: unitsFor('return'),
     unitsWasted: unitsFor('waste'),
     unitsAdjusted: unitsFor('adjustment'),
-    count: rows.length
+    count: rows.length,
+    // Not period figures: these are the state of the shop right now, carried over
+    // from the dashboard this page replaced.
+    owedNow: state.customers.reduce((sum, customer) => sum + Number(customer.balance || 0), 0),
+    lowStockNow: state.products.filter((product) => product.stock <= getLowStockThreshold(product)).length
   };
 }
 
@@ -2594,7 +2329,8 @@ function reportTiles(summary) {
     ['Encaissé', formatMoney(summary.cashIn), 'Ventes réglées et dettes payées'],
     ['Décaissé', formatMoney(summary.cashOut), 'Achats, dépenses et remboursements'],
     ['Solde net', formatMoney(summary.net), summary.net >= 0 ? 'Excédent sur la période' : 'Déficit sur la période'],
-    ['Valeur des pertes', formatMoney(summary.wasteValue), `${plural(summary.unitsWasted, 'article')} retiré${Math.abs(summary.unitsWasted) > 1 ? 's' : ''}`]
+    ['Total dû', formatMoney(summary.owedNow), 'Dettes clients en cours, toutes périodes'],
+    ['Stock faible', summary.lowStockNow, summary.lowStockNow ? 'Produits à réapprovisionner' : 'Stock suffisant partout']
   ];
   const stock = [
     ['Vendus', summary.unitsSold, formatMoney(summary.salesValue)],
@@ -2624,9 +2360,40 @@ function reportTiles(summary) {
     </div>`;
 }
 
+// The payment pill the retired Historique page showed. Only a sale has a tender.
+function reportSettlement(row) {
+  if (row.type !== 'sale') return '<span class="subtle">—</span>';
+  const credit = row.sale?.paymentMethod === 'debt';
+  const label = credit ? (row.sale?.paymentType === 'partial' ? getInvoiceStatus(row.sale) : 'Crédit') : 'Espèces';
+  return `<span class="mini-pill ${credit ? 'warning' : 'success'}">${label}</span>`;
+}
+
+// Which row actions a movement offers. A purchase or a correction has no invoice
+// to show, and an expense is edited rather than reprinted.
+function reportRowActions(row) {
+  if (row.type === 'sale' || row.type === 'return') {
+    return `<button class="link-btn" data-report-view="${row.id}">Voir</button>
+            <button class="link-btn danger-link" data-report-delete="${row.id}">Supprimer</button>`;
+  }
+  if (row.type === 'expense') {
+    return `<button class="link-btn" data-report-edit-expense="${row.id}">Modifier</button>
+            <button class="link-btn danger-link" data-report-delete-expense="${row.id}">Supprimer</button>`;
+  }
+  if (row.type === 'purchase' || row.type === 'waste') {
+    return `<button class="link-btn danger-link" data-report-delete="${row.id}">Supprimer</button>`;
+  }
+  return '';
+}
+
 function reportTable(rows) {
   if (!rows.length) {
-    return '<div class="card"><p class="report-empty">Aucun mouvement sur cette période.</p></div>';
+    return `
+      <div class="card">
+        <div class="empty-state-block">
+          <strong>Aucun mouvement sur cette période</strong>
+          <p>Changez la date ou la catégorie pour voir d’autres transactions.</p>
+        </div>
+      </div>`;
   }
 
   return `
@@ -2635,8 +2402,9 @@ function reportTable(rows) {
         <table class="report-table">
           <thead>
             <tr>
-              <th>Date</th><th>Type</th><th>Détail</th>
+              <th>Date</th><th>Type</th><th>Détail</th><th>Règlement</th>
               <th class="report-num">Articles</th><th class="report-num">Montant</th>
+              <th class="row-actions-head" aria-label="Actions"></th>
             </tr>
           </thead>
           <tbody>
@@ -2647,12 +2415,14 @@ function reportTable(rows) {
       ? when.toLocaleDateString('fr-FR')
       : `${when.toLocaleDateString('fr-FR')} ${when.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}`;
     return `
-              <tr>
+              <tr class="report-row report-row-${meta.chip}">
                 <td>${stamp}</td>
                 <td><span class="mini-pill report-pill-${meta.chip}">${meta.label}</span></td>
                 <td>${escapeHtml(row.party)}${row.detail ? `<small class="report-detail">${escapeHtml(row.detail)}</small>` : ''}</td>
+                <td>${reportSettlement(row)}</td>
                 <td class="report-num">${row.units || '—'}</td>
                 <td class="report-num">${formatMoney(row.amount)}</td>
+                <td class="row-actions">${reportRowActions(row)}</td>
               </tr>`;
   }).join('')}
           </tbody>
@@ -2672,6 +2442,48 @@ function renderReports() {
     <p class="report-period">${escapeHtml(reportPeriodLabel())} · ${plural(summary.count, 'mouvement')}</p>
     ${reportTiles(summary)}
     ${reportTable(rows)}`;
+
+  const bind = (attribute, handler) => container.querySelectorAll(`[${attribute}]`).forEach((button) => {
+    button.addEventListener('click', () => handler(button.getAttribute(attribute)));
+  });
+  bind('data-report-view', openReceipt);
+  bind('data-report-delete', openDeleteSaleConfirmation);
+  bind('data-report-edit-expense', openExpenseEditor);
+  bind('data-report-delete-expense', openExpenseDeleteConfirmation);
+}
+
+// The customer typeahead the retired Historique page carried. Picking a customer
+// narrows the report to their trade; clearing the box widens it again.
+function renderReportCustomerSuggestions() {
+  const input = document.getElementById('report-customer');
+  const list = document.getElementById('report-customer-suggestions');
+  if (!input || !list) return;
+
+  const query = input.value.toLowerCase().trim();
+  if (!query) {
+    list.classList.add('hidden');
+    list.innerHTML = '';
+    return;
+  }
+
+  const matches = state.customers
+    .filter((customer) => `${customer.name} ${customer.phone}`.toLowerCase().includes(query))
+    .slice(0, 6);
+
+  list.innerHTML = matches.length
+    ? matches.map((customer) => `<button type="button" data-report-customer="${customer.id}"><strong>${escapeHtml(customer.name)}</strong><small>${escapeHtml(customer.phone)}</small></button>`).join('')
+    : '<p class="suggestion-empty">Aucun client trouvé.</p>';
+  list.classList.remove('hidden');
+
+  list.querySelectorAll('[data-report-customer]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const customer = getCustomerById(button.dataset.reportCustomer);
+      reportFilters.customerId = customer.id;
+      input.value = `${customer.name} (${customer.phone})`;
+      list.classList.add('hidden');
+      renderReports();
+    });
+  });
 }
 
 function setReportMode(mode) {
@@ -2800,6 +2612,17 @@ function setupReportListeners() {
     button.addEventListener('click', () => setReportCategory(button.dataset.reportCategory));
   });
   document.getElementById('export-report-btn')?.addEventListener('click', exportReportPdf);
+
+  const customer = document.getElementById('report-customer');
+  customer?.addEventListener('input', () => {
+    // Typing over a chosen customer clears the selection, so the box never shows
+    // one name while the table is filtered by another.
+    if (reportFilters.customerId) {
+      reportFilters.customerId = '';
+      renderReports();
+    }
+    renderReportCustomerSuggestions();
+  });
 }
 
 // --- Dépenses ---------------------------------------------------------------
@@ -2816,8 +2639,6 @@ const EXPENSE_TYPES = [
   'Autre'
 ];
 
-// Its own filter state, deliberately separate from the dashboard's incomeRange.
-let expenseFilters = { type: 'all', dateMode: 'all', start: '', end: '' };
 let editingExpenseId = null;
 let viewingExpenseId = null;
 let pendingDeleteExpenseId = null;
@@ -2839,97 +2660,8 @@ function getExpenseById(expenseId) {
   return state.expenses.find((expense) => expense.id === expenseId) || null;
 }
 
-function getExpenseDateBounds() {
-  const today = new Date();
-  if (expenseFilters.dateMode === 'today') {
-    const value = toDateInputValue(today);
-    return { start: value, end: value };
-  }
-  if (expenseFilters.dateMode === 'week') {
-    return { start: toDateInputValue(getStartOfWeek(today)), end: toDateInputValue(today) };
-  }
-  if (expenseFilters.dateMode === 'custom') {
-    return { start: expenseFilters.start || '', end: expenseFilters.end || '' };
-  }
-  return { start: '', end: '' };
-}
-
 // The single source of truth for both the list and the total, so the summary can
 // never disagree with the rows on screen.
-function getFilteredExpenses() {
-  const { start, end } = getExpenseDateBounds();
-  return state.expenses
-    .filter((expense) => {
-      const typeMatch = expenseFilters.type === 'all' || expense.type === expenseFilters.type;
-      const afterStart = !start || (expense.date || '') >= start;
-      const beforeEnd = !end || (expense.date || '') <= end;
-      return typeMatch && afterStart && beforeEnd;
-    })
-    .sort((a, b) => (b.date || '').localeCompare(a.date || '') || String(b.createdAt || '').localeCompare(String(a.createdAt || '')));
-}
-
-function hasActiveExpenseFilters() {
-  return expenseFilters.type !== 'all' || expenseFilters.dateMode !== 'all';
-}
-
-function renderExpenses() {
-  const list = document.getElementById('expenses-list');
-  if (!list) return;
-
-  const filtered = getFilteredExpenses();
-  const total = filtered.reduce((sum, expense) => sum + Number(expense.amount || 0), 0);
-
-  document.getElementById('expenses-total').textContent = formatMoney(total);
-  document.getElementById('expenses-count').textContent = `${filtered.length} dépense${filtered.length === 1 ? '' : 's'}`;
-  document.getElementById('expense-custom-range').classList.toggle('hidden', expenseFilters.dateMode !== 'custom');
-
-  if (!filtered.length) {
-    list.innerHTML = `<p class="empty-state">${state.expenses.length && hasActiveExpenseFilters() ? 'Aucune dépense pour ces critères' : 'Aucune dépense'
-      }</p>`;
-    return;
-  }
-
-  list.innerHTML = `<table>
-    <thead>
-      <tr>
-        <th>Date</th>
-        <th>Type de dépense</th>
-        <th>Montant</th>
-        <th>Actions</th>
-      </tr>
-    </thead>
-    <tbody>
-      ${filtered.map((expense) => `
-        <tr class="expense-row" data-expense-open="${expense.id}">
-          <td>${formatExpenseDate(expense.date)}</td>
-          <td><span class="expense-type-cell">${expense.type || 'Autre'}</span>${expense.note ? `<small class="expense-note-preview">${expense.note}</small>` : ''}</td>
-          <td class="expense-amount-cell">${formatMoney(expense.amount)}</td>
-          <td class="history-actions">
-            <button type="button" class="link-btn" data-expense-edit="${expense.id}">Modifier</button>
-            <button type="button" class="link-btn danger-link" data-expense-delete="${expense.id}">Supprimer</button>
-          </td>
-        </tr>
-      `).join('')}
-    </tbody>
-  </table>`;
-
-  list.querySelectorAll('[data-expense-edit]').forEach((button) => {
-    button.addEventListener('click', (event) => {
-      event.stopPropagation();
-      openExpenseEditor(button.dataset.expenseEdit);
-    });
-  });
-  list.querySelectorAll('[data-expense-delete]').forEach((button) => {
-    button.addEventListener('click', (event) => {
-      event.stopPropagation();
-      openExpenseDeleteConfirmation(button.dataset.expenseDelete);
-    });
-  });
-  list.querySelectorAll('[data-expense-open]').forEach((row) => {
-    row.addEventListener('click', () => openExpenseDetails(row.dataset.expenseOpen));
-  });
-}
-
 // One modal for both create and edit: passing an id prefills it and makes the
 // submit update that record instead of appending a new one.
 function openExpenseEditor(expenseId) {
@@ -3048,35 +2780,15 @@ function setupExpenseListeners() {
     if (event.target.id === 'expense-delete-modal') closeExpenseDeleteConfirmation();
   });
 
-  document.getElementById('expense-type-filter').addEventListener('change', (event) => {
-    expenseFilters.type = event.target.value;
-    renderExpenses();
-  });
-  document.getElementById('expense-date-filter').addEventListener('change', (event) => {
-    expenseFilters.dateMode = event.target.value;
-    renderExpenses();
-  });
-  document.getElementById('expense-range-start').addEventListener('change', (event) => {
-    expenseFilters.start = event.target.value;
-    renderExpenses();
-  });
-  document.getElementById('expense-range-end').addEventListener('change', (event) => {
-    expenseFilters.end = event.target.value;
-    renderExpenses();
-  });
 }
 
 function renderAll() {
-  renderDashboard();
   applyPosMode();
   renderPosProducts();
   renderCart();
   renderCustomerSelects();
   renderProductsList();
   renderClientRoute();
-  renderDebtRoute();
-  renderSalesHistory();
-  renderExpenses();
   renderPurchases();
   renderReports();
   if (selectedCustomerProfile) {
@@ -3091,21 +2803,12 @@ function setupEventListeners() {
     renderPosCustomerField();
   });
   document.getElementById('product-search').addEventListener('input', renderProductsList);
-  document.getElementById('income-range-toggle').addEventListener('click', toggleIncomeRangePanel);
-  document.querySelectorAll('.range-option').forEach((button) => {
-    button.addEventListener('click', () => setIncomeRangeMode(button.dataset.range));
-  });
-  document.getElementById('income-range-apply').addEventListener('click', applyCustomIncomeRange);
   document.getElementById('payment-method-select').addEventListener('change', updatePosPaymentFields);
   document.getElementById('sale-discount-percent').addEventListener('input', (event) => {
     saleDiscountPercent = Math.min(100, Math.max(0, Number(event.target.value) || 0));
     event.target.value = saleDiscountPercent;
     renderCart();
   });
-  document.getElementById('history-customer-filter').addEventListener('input', renderSalesHistory);
-  document.getElementById('history-customer-filter').addEventListener('input', renderHistoryCustomerSuggestions);
-  document.getElementById('history-date-filter').addEventListener('change', renderSalesHistory);
-  document.getElementById('history-payment-filter').addEventListener('change', renderSalesHistory);
   document.querySelectorAll('[data-pos-mode]').forEach((button) => {
     button.addEventListener('click', () => setPosMode(button.dataset.posMode));
   });
@@ -3139,12 +2842,12 @@ function setupEventListeners() {
   document.getElementById('customer-editor-modal').addEventListener('click', (event) => {
     if (event.target.id === 'customer-editor-modal') cancelCustomerEdit();
   });
+  // Closes the report's customer typeahead when the click lands elsewhere.
   document.addEventListener('click', (event) => {
-    const panel = document.getElementById('income-range-panel');
-    const toggle = document.getElementById('income-range-toggle');
-    if (!panel.classList.contains('hidden') && !panel.contains(event.target) && event.target !== toggle && !toggle.contains(event.target)) {
-      panel.classList.add('hidden');
-    }
+    const list = document.getElementById('report-customer-suggestions');
+    const input = document.getElementById('report-customer');
+    if (!list || list.classList.contains('hidden')) return;
+    if (!list.contains(event.target) && event.target !== input) list.classList.add('hidden');
   });
   setupExpenseListeners();
   setupPurchaseListeners();
@@ -3153,10 +2856,7 @@ function setupEventListeners() {
 }
 
 window.addEventListener('popstate', () => {
-  if (window.location.pathname.startsWith('/debts')) {
-    setActiveTab('debts');
-    renderDebtRoute();
-  } else if (window.location.pathname.startsWith('/clients')) {
+  if (isCustomerPath()) {
     setActiveTab('customers');
     renderClientRoute();
   }
@@ -3168,10 +2868,7 @@ document.getElementById('logout-btn')?.addEventListener('click', handleLogout);
 setupEventListeners();
 renderAll();
 setAppLoading(true);
-if (window.location.pathname.startsWith('/debts')) {
-  setActiveTab('debts');
-  renderDebtRoute();
-} else if (window.location.pathname.startsWith('/clients')) {
+if (isCustomerPath()) {
   setActiveTab('customers');
   renderClientRoute();
 }
