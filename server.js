@@ -763,9 +763,15 @@ async function priceItems(client, rawItems, { lockStock, priceSource = 'catalogu
 
 // Pays `amount` off a customer's unpaid invoices, oldest first, as ordinary
 // payment rows. Written this way so sale_payments and customer_totals need no
-// special case for a refund -- to them it is simply money received. Returns what
-// could not be absorbed, which is the part that has to leave the till in cash.
-async function creditCustomerDebt(client, { customerId, amount, returnSaleId }) {
+// special case for a refund -- to them it is simply money received.
+//
+// Two callers, distinguished only by what they pass:
+//   a return   -- returnSaleId set, so the credits die with the return
+//   a payment  -- the customer handing over money against their whole balance
+//
+// Returns `left`, what could not be absorbed (for a return, the part that has to
+// leave the till in cash), and `applied`, the invoices it touched.
+async function creditCustomerDebt(client, { customerId, amount, returnSaleId = null, idPrefix = 'credit' }) {
   const { rows } = await client.query(
     `SELECT s.id, (s.total_amount - COALESCE(p.paid, 0))::numeric AS outstanding
      FROM sales s
@@ -777,19 +783,21 @@ async function creditCustomerDebt(client, { customerId, amount, returnSaleId }) 
     [customerId]
   );
 
+  const applied = [];
   let left = amount;
   for (const invoice of rows) {
     if (left <= 0) break;
-    const applied = money(Math.min(left, Number(invoice.outstanding)));
-    if (applied <= 0) continue;
+    const part = money(Math.min(left, Number(invoice.outstanding)));
+    if (part <= 0) continue;
     await client.query(
       `INSERT INTO debt_transactions (id, customer_id, sale_id, return_sale_id, type, amount, transaction_date)
        VALUES ($1, $2, $3, $4, 'payment', $5, NOW())`,
-      [newId('credit'), customerId, invoice.id, returnSaleId, applied]
+      [newId(idPrefix), customerId, invoice.id, returnSaleId, part]
     );
-    left = money(left - applied);
+    applied.push({ saleId: invoice.id, amount: part });
+    left = money(left - part);
   }
-  return left;
+  return { left, applied };
 }
 
 app.get('/api/sales', requireAuth, requireDatabase, route(async (request, response) => {
@@ -888,7 +896,7 @@ app.post('/api/sales', requireAuth, requireDatabase, route(async (request, respo
     // the remainder is money out of the till. A walk-in return is all cash.
     if (type === 'return') {
       const cashRefund = customerId
-        ? await creditCustomerDebt(client, { customerId, amount: totalAmount, returnSaleId: saleId })
+        ? (await creditCustomerDebt(client, { customerId, amount: totalAmount, returnSaleId: saleId })).left
         : totalAmount;
       await client.query('UPDATE sales SET cash_refund = $2 WHERE id = $1', [saleId, cashRefund]);
     }
@@ -975,6 +983,45 @@ app.post('/api/sales/:id/payments', requireAuth, requireDatabase, route(async (r
     );
 
     return { sale: await readSale(client, sale.id), customer: await readCustomer(client, sale.customer_id) };
+  });
+
+  response.status(201).json(result);
+}));
+
+// Records money received against a customer's whole balance rather than one
+// invoice: the amount is spread over their unpaid invoices oldest first, which is
+// the order a shop settles a running tab in. Each slice is still an ordinary
+// payment row against a specific invoice, so nothing downstream -- sale_payments,
+// customer_totals, the reports -- needs to know this route exists.
+app.post('/api/customers/:id/payments', requireAuth, requireDatabase, route(async (request, response) => {
+  const amount = positiveAmount(request.body?.amount, 'Le montant du paiement');
+
+  const result = await inTransaction(async (client) => {
+    // The customer row is the lock for their whole balance: it is what stops two
+    // tills from each reading the same outstanding total and both paying it off.
+    const { rows } = await client.query('SELECT id FROM customers WHERE id = $1 FOR UPDATE', [request.params.id]);
+    if (!rows.length) throw new RequestError(404, 'Client introuvable.');
+    const customerId = rows[0].id;
+
+    const { rows: totals } = await client.query(
+      'SELECT balance FROM customer_totals WHERE customer_id = $1',
+      [customerId]
+    );
+    const outstanding = money(Number(totals[0]?.balance || 0));
+    if (outstanding <= 0) throw new RequestError(409, 'Ce client n’a aucune dette en cours.');
+    if (amount > outstanding) {
+      throw new RequestError(400, `Le paiement dépasse la dette du client (${outstanding}).`);
+    }
+
+    const { applied } = await creditCustomerDebt(client, { customerId, amount, idPrefix: 'payment' });
+
+    return {
+      customer: await readCustomer(client, customerId),
+      sales: applied.length
+        ? await readSales(client, 'WHERE s.id = ANY($1::text[])', [applied.map((entry) => entry.saleId)])
+        : [],
+      applied
+    };
   });
 
   response.status(201).json(result);

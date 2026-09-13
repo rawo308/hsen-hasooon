@@ -4727,3 +4727,9 @@ tr:focus-within > .row-actions .link-btn {
 .new-product-toggle-row {
   margin: 10px 0 0;
 }
+
+/* With the tax table hidden, the settlement box keeps its column rather than
+   sliding left and leaving a gap beside it. */
+.inv-closing-no-tax .inv-settlement {
+  grid-column: 2;
+}
