@@ -1059,13 +1059,15 @@ textarea {
 }
 
 .stock-add-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
 }
 
 .stock-add-row input {
-  flex: 1;
+  width: 100%;
   min-width: 0;
 }
 
@@ -2606,6 +2608,27 @@ textarea {
   .inv-table thead,
   .report-table thead {
     display: table-header-group;
+  }
+
+  /* The row actions are invisible on screen until hover, but the column still
+     claimed its width on paper -- which is what squeezed Détail and broke the
+     amounts across two lines. Paper has no hover, so the column goes. */
+  .row-actions,
+  .row-actions-head {
+    display: none !important;
+  }
+
+  /* A money figure split as "40 000 F / CFA" is unreadable. Amounts and stamps
+     hold their line; Détail is the column that wraps. */
+  .report-table .report-num,
+  .report-table td:first-child,
+  .report-print-summary strong,
+  .inv-cell-num {
+    white-space: nowrap;
+  }
+
+  .report-document .report-table td:nth-child(3) {
+    width: 38%;
   }
 
   .report-table th {
@@ -4647,4 +4670,49 @@ tr:focus-within > .row-actions .link-btn {
   letter-spacing: 0.04em;
   opacity: 0.75;
   text-transform: none;
+}
+
+.stock-correction-field {
+  display: grid;
+  gap: 4px;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.stock-correction-field input {
+  max-width: 180px;
+}
+
+.stock-correction-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.stock-delta {
+  margin: 0;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.stock-delta.is-up {
+  color: var(--success);
+}
+
+/* Removing stock is the direction worth being sure about. */
+.stock-delta.is-down {
+  color: var(--danger);
+}
+
+.stock-correction-note {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.74rem;
+  line-height: 1.4;
+}
+
+.report-pill-adjustment_out {
+  background: #eceff1;
+  color: #4a5b63;
 }

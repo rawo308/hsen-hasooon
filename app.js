@@ -339,7 +339,7 @@ function getProductById(productId) {
 // is not explicitly a return is a sale.
 // The five kinds of row in state.sales. Anything unrecognised is read as a sale,
 // which is what a row written before the ledger grew these types would be.
-const TRANSACTION_TYPES = ['sale', 'return', 'purchase', 'waste', 'adjustment'];
+const TRANSACTION_TYPES = ['sale', 'return', 'purchase', 'waste', 'adjustment', 'adjustment_out'];
 
 function getTransactionType(transaction) {
   return TRANSACTION_TYPES.includes(transaction?.type) ? transaction.type : 'sale';
@@ -877,7 +877,9 @@ function beginEditProduct(productId) {
   document.getElementById('product-name').value = product.name;
   document.getElementById('product-low-stock-threshold').value = getLowStockThreshold(product);
   document.getElementById('product-price').value = product.sellingPrice;
-  document.getElementById('inventory-section-hint').textContent = 'Ajoutez le stock nouvellement reçu.';
+  // Receiving goods belongs in Achats, where the cost and supplier are captured;
+  // this block is for correcting a count.
+  document.getElementById('inventory-section-hint').textContent = 'Corrigez le comptage. Pour une livraison, utilisez Achats.';
   document.getElementById('product-stock-add-row').classList.add('hidden');
   document.getElementById('product-stock-addition').value = '';
   document.getElementById('product-current-stock').textContent = product.stock;
@@ -905,24 +907,67 @@ function cancelProductEdit() {
 }
 
 function toggleAddStockRow() {
-  document.getElementById('product-stock-add-row').classList.toggle('hidden');
+  const row = document.getElementById('product-stock-add-row');
+  row.classList.toggle('hidden');
+  if (!row.classList.contains('hidden')) {
+    // Pre-filled with what the system believes, so the operator overwrites it
+    // with what they actually counted.
+    const product = getProductById(editingProductId);
+    const field = document.getElementById('product-stock-addition');
+    field.value = product ? product.stock : '';
+    field.focus();
+    field.select();
+    renderStockDelta();
+  }
 }
 
 function cancelAddStock() {
   document.getElementById('product-stock-add-row').classList.add('hidden');
   document.getElementById('product-stock-addition').value = '';
+  document.getElementById('product-stock-delta').textContent = '';
+}
+
+// Says what the correction will do before it is made, so nobody removes stock by
+// mistyping a count.
+function renderStockDelta() {
+  const label = document.getElementById('product-stock-delta');
+  const product = getProductById(editingProductId);
+  const raw = document.getElementById('product-stock-addition').value;
+  if (!label) return;
+  if (!product || raw === '') {
+    label.textContent = '';
+    label.className = 'stock-delta';
+    return;
+  }
+  const delta = Math.trunc(Number(raw)) - product.stock;
+  if (!Number.isFinite(delta) || delta === 0) {
+    label.textContent = 'Aucun changement.';
+    label.className = 'stock-delta';
+    return;
+  }
+  label.textContent = delta > 0
+    ? `Ajoutera ${plural(delta, 'unité')} au stock.`
+    : `Retirera ${plural(Math.abs(delta), 'unité')} du stock.`;
+  label.className = `stock-delta ${delta > 0 ? 'is-up' : 'is-down'}`;
 }
 
 async function addStockToProduct() {
   if (!editingProductId) return;
-  const amount = Number(document.getElementById('product-stock-addition').value);
   const product = getProductById(editingProductId);
-  if (!product || !amount || amount < 1) return;
-  const saved = await mutate(`/products/${editingProductId}/stock`, 'POST', { amount });
+  const raw = document.getElementById('product-stock-addition').value;
+  if (!product || raw === '') return;
+
+  const target = Math.trunc(Number(raw));
+  if (!Number.isFinite(target) || target < 0 || target === product.stock) return;
+
+  // The counted figure is sent, not the difference: the server works the
+  // difference out against the locked row, so a concurrent sale cannot be undone
+  // by a correction that was calculated before it happened.
+  const saved = await mutate(`/products/${editingProductId}/stock`, 'POST', { target });
   if (saved === null) return;
+
   document.getElementById('product-current-stock').textContent = saved.product.stock;
-  document.getElementById('product-stock-addition').value = '';
-  document.getElementById('product-stock-add-row').classList.add('hidden');
+  cancelAddStock();
 }
 
 function renderCustomersList() {
@@ -2153,21 +2198,22 @@ const REPORT_TYPES = {
   purchase:   { label: 'Achat',      stock: 'in',  chip: 'purchase' },
   return:     { label: 'Retour',     stock: 'in',  chip: 'return' },
   waste:      { label: 'Perte',      stock: 'out', chip: 'waste' },
-  adjustment: { label: 'Ajustement', stock: 'in',  chip: 'adjustment' },
+  adjustment: { label: 'Ajustement +', stock: 'in',  chip: 'adjustment' },
+  adjustment_out: { label: 'Ajustement −', stock: 'out', chip: 'adjustment' },
   expense:    { label: 'Dépense',    stock: null,  chip: 'expense' }
 };
 
 // Which transaction types each filter chip lets through. 'money' is the cash view:
 // only the types that move money in or out of the till.
 const REPORT_CATEGORIES = {
-  all:        ['sale', 'purchase', 'return', 'waste', 'adjustment', 'expense'],
+  all:        ['sale', 'purchase', 'return', 'waste', 'adjustment', 'adjustment_out', 'expense'],
   money:      ['sale', 'purchase', 'return', 'expense'],
   sale:       ['sale'],
   purchase:   ['purchase'],
   return:     ['return'],
   waste:      ['waste'],
   expense:    ['expense'],
-  adjustment: ['adjustment']
+  adjustment: ['adjustment', 'adjustment_out']
 };
 
 let reportFilters = { mode: 'day', day: '', start: '', end: '', category: 'all', customerId: '' };
@@ -2195,7 +2241,7 @@ function expenseWithinFilter(expense, filter) {
 function reportRowParty(type, sale, customer) {
   if (type === 'purchase') return sale.supplier || 'Fournisseur non précisé';
   if (type === 'waste') return sale.reason || 'Autre';
-  if (type === 'adjustment') return 'Correction de stock';
+  if (type === 'adjustment' || type === 'adjustment_out') return 'Correction de stock';
   return customer ? customer.name : 'Client de passage';
 }
 
@@ -2220,7 +2266,7 @@ function getReportRows() {
       type,
       at: sale.createdAt,
       party: reportRowParty(type, sale, customer),
-      detail: type === 'adjustment' && sale.reason ? sale.reason : '',
+      detail: type.startsWith('adjustment') && sale.reason ? sale.reason : '',
       units: sale.items.reduce((total, item) => total + Number(item.quantity || 0), 0),
       amount: Number(sale.totalAmount || 0),
       sale
@@ -2305,7 +2351,7 @@ function summariseReport(rows) {
     unitsBought: unitsFor('purchase'),
     unitsReturned: unitsFor('return'),
     unitsWasted: unitsFor('waste'),
-    unitsAdjusted: unitsFor('adjustment'),
+    unitsAdjusted: unitsFor('adjustment') - unitsFor('adjustment_out'),
     count: rows.length,
     // Not period figures: these are the state of the shop right now, carried over
     // from the dashboard this page replaced.
@@ -2820,6 +2866,7 @@ function setupEventListeners() {
   document.getElementById('product-form').addEventListener('submit', handleProductSubmit);
   document.getElementById('toggle-add-stock-btn').addEventListener('click', toggleAddStockRow);
   document.getElementById('cancel-add-stock-btn').addEventListener('click', cancelAddStock);
+  document.getElementById('product-stock-addition').addEventListener('input', renderStockDelta);
   document.getElementById('add-product-stock-btn').addEventListener('click', addStockToProduct);
   document.getElementById('cancel-payment-btn').addEventListener('click', closePaymentConfirmation);
   document.getElementById('confirm-payment-btn').addEventListener('click', confirmPaymentRecord);

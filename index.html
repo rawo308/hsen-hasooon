@@ -1,10 +1,11 @@
 <!DOCTYPE html>
-<html lang="fr">
+<html lang="fr" translate="no">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="google" content="notranslate" />
     <title>H.H Fruit &ndash; Gestion des stocks et des ventes</title>
-    <link rel="stylesheet" href="/styles.css?v=33" />
+    <link rel="stylesheet" href="/styles.css?v=36" />
   </head>
   <body>
     <div class="app-shell">
@@ -212,12 +213,18 @@
                   <div id="product-stock-management" class="stock-management hidden">
                     <div class="stock-line">
                       <span>Stock actuel : <strong id="product-current-stock">0</strong> unités</span>
-                      <button type="button" id="toggle-add-stock-btn" class="link-btn">+ Ajouter des unités</button>
+                      <button type="button" id="toggle-add-stock-btn" class="link-btn">Corriger le stock</button>
                     </div>
                     <div id="product-stock-add-row" class="stock-add-row hidden">
-                      <input id="product-stock-addition" type="number" min="1" step="1" placeholder="Unités à ajouter" />
-                      <button type="button" id="add-product-stock-btn" class="secondary-btn compact-btn">Ajouter</button>
-                      <button type="button" id="cancel-add-stock-btn" class="link-btn muted">Annuler</button>
+                      <label class="stock-correction-field">
+                        <span>Quantité réellement comptée</span>
+                        <input id="product-stock-addition" type="number" min="0" step="1" placeholder="ex. 8" />
+                      </label>
+                      <p id="product-stock-delta" class="stock-delta"></p>
+                      <div class="stock-correction-actions">
+                        <button type="button" id="add-product-stock-btn" class="secondary-btn compact-btn">Enregistrer</button>
+                        <button type="button" id="cancel-add-stock-btn" class="link-btn muted">Annuler</button>
+                      </div>
                     </div>
                   </div>
                 </section>
@@ -484,6 +491,6 @@
       </form>
     </div>
 
-    <script src="/app.js?v=33"></script>
+    <script src="/app.js?v=36"></script>
   </body>
 </html>

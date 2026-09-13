@@ -27,6 +27,7 @@ CREATE TABLE IF NOT EXISTS products (
 );
 
 ALTER TABLE products DROP COLUMN IF EXISTS category;
+CREATE UNIQUE INDEX IF NOT EXISTS products_name_unique ON products (LOWER(TRIM(name)));
 ALTER TABLE products DROP COLUMN IF EXISTS cost_price;
 
 CREATE TABLE IF NOT EXISTS customers (
@@ -51,13 +52,14 @@ ALTER TABLE customers DROP COLUMN IF EXISTS total_paid;
 --   return      goods back in, money back to the customer (debt first, then cash)
 --   purchase    goods in from a supplier, money out, priced at what was paid
 --   waste       goods written off, valued at selling price
---   adjustment  a manual stock correction, no money
+--   adjustment  a manual stock correction upward, no money
+--   adjustment_out  a manual stock correction downward, no money
 --
 -- Only 'sale' and 'return' involve a customer; only 'sale' feeds customer_totals.
 CREATE TABLE IF NOT EXISTS sales (
   id TEXT PRIMARY KEY,
   type TEXT NOT NULL DEFAULT 'sale'
-    CHECK (type IN ('sale', 'return', 'purchase', 'waste', 'adjustment')),
+    CHECK (type IN ('sale', 'return', 'purchase', 'waste', 'adjustment', 'adjustment_out')),
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   customer_id TEXT REFERENCES customers(id) ON DELETE SET NULL,
   -- Both NULL on everything except a sale, which is the only type with a tender.
@@ -93,7 +95,7 @@ ALTER TABLE sales ADD COLUMN IF NOT EXISTS cash_refund NUMERIC(12, 2) NOT NULL D
 -- the vocabulary grows widens the constraint instead of failing against it.
 ALTER TABLE sales DROP CONSTRAINT IF EXISTS sales_type_check;
 ALTER TABLE sales ADD CONSTRAINT sales_type_check
-  CHECK (type IN ('sale', 'return', 'purchase', 'waste', 'adjustment'));
+  CHECK (type IN ('sale', 'return', 'purchase', 'waste', 'adjustment', 'adjustment_out'));
 
 CREATE TABLE IF NOT EXISTS sale_items (
   id BIGSERIAL PRIMARY KEY,

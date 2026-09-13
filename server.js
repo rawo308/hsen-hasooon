@@ -517,6 +517,15 @@ app.put('/api/settings', requireAuth, requireDatabase, route(async (request, res
 
 // --- products --------------------------------------------------------------
 
+// LOWER(TRIM(name)) is uniquely indexed, so a clash surfaces as 23505. Catching
+// it here turns a 500 into the sentence the operator needs.
+function rejectDuplicateProduct(error) {
+  if (error?.code === '23505' && /products_name_unique/.test(error.constraint || '')) {
+    throw new RequestError(409, 'Un produit portant ce nom existe déjà.');
+  }
+  throw error;
+}
+
 function productPayload(body) {
   return {
     name: requiredText(body?.name, 'Le nom du produit'),
@@ -537,7 +546,7 @@ app.post('/api/products', requireAuth, requireDatabase, route(async (request, re
     `INSERT INTO products (id, name, selling_price, stock, low_stock_threshold, description)
      VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
     [newId('prod'), payload.name, payload.sellingPrice, stock, payload.lowStockThreshold, payload.description]
-  );
+  ).catch(rejectDuplicateProduct);
   response.status(201).json({ product: toProduct(rows[0]) });
 }));
 
@@ -549,40 +558,55 @@ app.put('/api/products/:id', requireAuth, requireDatabase, route(async (request,
     `UPDATE products SET name = $2, selling_price = $3, low_stock_threshold = $4, description = $5, updated_at = NOW()
      WHERE id = $1 RETURNING *`,
     [request.params.id, payload.name, payload.sellingPrice, payload.lowStockThreshold, payload.description]
-  );
+  ).catch(rejectDuplicateProduct);
   if (!rows.length) throw new RequestError(404, 'Produit introuvable.');
   response.json({ product: toProduct(rows[0]) });
 }));
 
-// The manual correction, for a recount or a crate found at the back. It writes an
-// 'adjustment' transaction alongside the stock change so the units cannot appear
-// out of nowhere: every movement in the Rapports page has a row behind it.
+// The manual correction, for a recount or a crate found at the back. Send the
+// counted quantity as `target` and the server works out the difference against
+// the locked row, so two people counting at once cannot both apply their delta.
+// `amount` is still accepted as a signed difference.
 app.post('/api/products/:id/stock', requireAuth, requireDatabase, route(async (request, response) => {
-  const amount = nonNegativeInteger(request.body?.amount, 'La quantité ajoutée');
-  if (!amount) throw new RequestError(400, 'La quantité ajoutée doit être supérieure à 0.');
-  const note = optionalText(request.body?.note, { max: 200 });
+  const body = request.body || {};
+  const hasTarget = body.target !== undefined && body.target !== null && body.target !== '';
+  const target = hasTarget ? nonNegativeInteger(body.target, 'Le stock compté') : null;
+  const note = optionalText(body.note, { max: 200 });
 
   const result = await inTransaction(async (client) => {
-    const { rows } = await client.query(
-      'UPDATE products SET stock = stock + $2, updated_at = NOW() WHERE id = $1 RETURNING *',
-      [request.params.id, amount]
-    );
+    const { rows } = await client.query('SELECT * FROM products WHERE id = $1 FOR UPDATE', [request.params.id]);
     if (!rows.length) throw new RequestError(404, 'Produit introuvable.');
-    const product = rows[0];
+    const before = rows[0];
+
+    const delta = hasTarget ? target - before.stock : Math.trunc(Number(body.amount));
+    if (!Number.isFinite(delta) || !Number.isInteger(delta) || delta === 0) {
+      throw new RequestError(400, hasTarget
+        ? 'Le stock compté est déjà celui enregistré.'
+        : 'La quantité doit être un entier différent de 0.');
+    }
+    if (before.stock + delta < 0) {
+      throw new RequestError(409, `Le stock ne peut pas descendre sous 0 (${before.stock} actuellement).`);
+    }
+
+    const { rows: updated } = await client.query(
+      'UPDATE products SET stock = stock + $2, updated_at = NOW() WHERE id = $1 RETURNING *',
+      [before.id, delta]
+    );
 
     // Valued at zero: no money changed hands, only the count on the shelf.
-    const saleId = newId(TRANSACTION_TYPES.adjustment.idPrefix);
+    const type = delta > 0 ? 'adjustment' : 'adjustment_out';
+    const saleId = newId(TRANSACTION_TYPES[type].idPrefix);
     await client.query(
-      `INSERT INTO sales (id, type, created_at, total_amount, reason) VALUES ($1, 'adjustment', NOW(), 0, $2)`,
-      [saleId, note]
+      `INSERT INTO sales (id, type, created_at, total_amount, reason) VALUES ($1, $2, NOW(), 0, $3)`,
+      [saleId, type, note]
     );
     await client.query(
       `INSERT INTO sale_items (sale_id, product_id, product_name, quantity, unit_price, subtotal)
        VALUES ($1, $2, $3, $4, 0, 0)`,
-      [saleId, product.id, product.name, amount]
+      [saleId, before.id, before.name, Math.abs(delta)]
     );
 
-    return { product: toProduct(product), sale: await readSale(client, saleId) };
+    return { product: toProduct(updated[0]), sale: await readSale(client, saleId), delta };
   });
 
   response.json(result);
@@ -659,7 +683,10 @@ const TRANSACTION_TYPES = {
   purchase:   { stock: +1, lockStock: false, priceSource: 'client',    idPrefix: 'purchase' },
   // Written off at selling price, so the figure is the revenue lost.
   waste:      { stock: -1, lockStock: true,  priceSource: 'catalogue', idPrefix: 'waste' },
-  adjustment: { stock: +1, lockStock: false, priceSource: 'zero',      idPrefix: 'adjust' }
+  adjustment: { stock: +1, lockStock: false, priceSource: 'zero',      idPrefix: 'adjust' },
+  // A recount can find fewer units as easily as more, so the correction goes both
+  // ways. Downward locks the row and cannot push stock below zero.
+  adjustment_out: { stock: -1, lockStock: true, priceSource: 'zero',    idPrefix: 'adjust' }
 };
 
 const WASTE_REASONS = ['Pourriture', 'Casse', 'Invendu', 'Vol', 'Autre'];
