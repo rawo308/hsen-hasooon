@@ -558,9 +558,9 @@ The current public tables are:
 | `store_settings` | Store name, address, phone, email, invoice footer, and origin label |
 | `products` | Product catalog, prices, descriptions, and stock |
 | `customers` | Customer profiles |
-| `sales` | Sale and return headers |
+| `sales` | The transaction ledger: sales, returns, purchases, write-offs and stock corrections |
 | `sale_items` | Historical products, quantities, and actual sale prices |
-| `debt_transactions` | Credit extended and customer payments |
+| `debt_transactions` | Credit extended, customer payments, and the credits a return writes off |
 | `expenses` | Recorded expenses |
 
 Two read-only views sit on top of them:
@@ -575,6 +575,26 @@ Two read-only views sit on top of them:
 The frontend reads everything once through `GET /api/state` when it loads, then writes through one endpoint per resource. Each write returns only the records it touched, and the browser patches those into the state it already holds.
 
 Nothing is stored as a JSON blob. Money figures that used to be stored columns -- a customer's balance, an invoice's paid amount and status -- are derived on read from the views above, so they cannot drift from the transactions they summarise.
+
+### Transaction types
+
+Every movement of stock is a row in `sales` with its lines in `sale_items`:
+
+| Type | Stock | Money | Where it is recorded |
+| --- | --- | --- | --- |
+| `sale` | out | in, now or as debt | Ventes / Caisse, mode Vente |
+| `return` | in | back to the customer | Ventes / Caisse, mode Retour |
+| `purchase` | in | out, at the price paid | Achats |
+| `waste` | out | none; valued at selling price | Ventes / Caisse, mode Perte |
+| `adjustment` | in | none | Produits, « Ajouter des unités » |
+
+Prices come from the catalogue for every type except `purchase`, where the price
+the buyer types is what the shop actually paid and nothing else knows it.
+
+A return settles its money against the customer's outstanding invoices first,
+oldest first, and only the remainder leaves the till as cash. Those credits are
+written as ordinary payment rows carrying `return_sale_id`, so the debt views need
+no special case for them and deleting the return takes its credits with it.
 
 ### Database-backed store settings
 
@@ -594,14 +614,28 @@ The current database settings are:
 | `GET /api/state` | Everything the app renders, in one round trip on load |
 | `GET/PUT /api/settings` | Read and update the store settings |
 | `GET/POST /api/products`, `PUT/DELETE /api/products/:id` | Product catalogue |
-| `POST /api/products/:id/stock` | Add units to a product's stock |
+| `POST /api/products/:id/stock` | Add units to a product's stock, recording an `adjustment` transaction |
 | `GET/POST /api/customers`, `PUT/DELETE /api/customers/:id` | Customer profiles |
-| `GET/POST /api/sales`, `DELETE /api/sales/:id` | Sales and returns |
+| `GET/POST /api/sales`, `DELETE /api/sales/:id` | Every transaction type; `DELETE` reverses whatever it did to stock and to the ledger |
 | `POST /api/sales/:id/payments` | Record money received against a credit invoice |
 | `GET/POST /api/expenses`, `PUT/DELETE /api/expenses/:id` | Expenses |
 
 Prices, totals and stock are computed on the server inside a transaction, so the
-browser cannot set a price or oversell a product.
+browser cannot set a selling price or oversell a product. The single exception is
+a purchase, where the price the buyer types is the cost the shop paid.
+
+### Rapports
+
+The Rapports page reports one day (the default) or a date range across every
+transaction type plus expenses, with a category filter and a PDF export. It is
+computed in the browser from the state `/api/state` already ships, the same way
+the dashboard, the sales history and the expenses page filter. That holds for a
+few thousand transactions; past that it wants a server-side aggregate.
+
+The export builds a printable sheet carrying the store letterhead and the selected
+period, then opens the browser's print dialogue -- "Enregistrer au format PDF"
+there is the export. No PDF library is involved, and the invoice prints by exactly
+the same route.
 
 ---
 

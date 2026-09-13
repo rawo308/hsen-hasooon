@@ -44,19 +44,35 @@ ALTER TABLE customers DROP COLUMN IF EXISTS balance;
 ALTER TABLE customers DROP COLUMN IF EXISTS total_purchased;
 ALTER TABLE customers DROP COLUMN IF EXISTS total_paid;
 
--- A 'sale' moves stock out and may create debt; a 'return' moves stock back in
--- and is standalone: it never touches a customer's totals or balance.
+-- Despite the name, this is the whole transaction ledger -- every movement of
+-- stock, in or out, is a row here with its lines in sale_items:
+--
+--   sale        goods out, money in, may create debt
+--   return      goods back in, money back to the customer (debt first, then cash)
+--   purchase    goods in from a supplier, money out, priced at what was paid
+--   waste       goods written off, valued at selling price
+--   adjustment  a manual stock correction, no money
+--
+-- Only 'sale' and 'return' involve a customer; only 'sale' feeds customer_totals.
 CREATE TABLE IF NOT EXISTS sales (
   id TEXT PRIMARY KEY,
-  type TEXT NOT NULL DEFAULT 'sale' CHECK (type IN ('sale', 'return')),
+  type TEXT NOT NULL DEFAULT 'sale'
+    CHECK (type IN ('sale', 'return', 'purchase', 'waste', 'adjustment')),
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   customer_id TEXT REFERENCES customers(id) ON DELETE SET NULL,
-  -- Both NULL on returns, which have no tender.
+  -- Both NULL on everything except a sale, which is the only type with a tender.
   payment_method TEXT CHECK (payment_method IN ('cash', 'debt')),
   payment_type TEXT CHECK (payment_type IN ('cash', 'partial', 'debt')),
   total_amount NUMERIC(12, 2) NOT NULL DEFAULT 0,
   discount NUMERIC(12, 2) NOT NULL DEFAULT 0,
-  discount_percent NUMERIC(5, 2) NOT NULL DEFAULT 0 CHECK (discount_percent >= 0 AND discount_percent <= 100)
+  discount_percent NUMERIC(5, 2) NOT NULL DEFAULT 0 CHECK (discount_percent >= 0 AND discount_percent <= 100),
+  -- Purchases only: who delivered it.
+  supplier TEXT NOT NULL DEFAULT '',
+  -- Waste only: why it was written off.
+  reason TEXT NOT NULL DEFAULT '',
+  -- Returns only: the part of the refund that left the till in cash, i.e. what
+  -- was left after the customer's outstanding debt had been credited.
+  cash_refund NUMERIC(12, 2) NOT NULL DEFAULT 0
 );
 
 -- amount_paid / debt_amount / status were stored columns duplicating the payment
@@ -69,6 +85,15 @@ ALTER TABLE sales ADD COLUMN IF NOT EXISTS payment_type TEXT;
 ALTER TABLE sales ADD COLUMN IF NOT EXISTS discount NUMERIC(12, 2) NOT NULL DEFAULT 0;
 ALTER TABLE sales ADD COLUMN IF NOT EXISTS discount_percent NUMERIC(5, 2) NOT NULL DEFAULT 0;
 ALTER TABLE sales ALTER COLUMN payment_method DROP NOT NULL;
+ALTER TABLE sales ADD COLUMN IF NOT EXISTS supplier TEXT NOT NULL DEFAULT '';
+ALTER TABLE sales ADD COLUMN IF NOT EXISTS reason TEXT NOT NULL DEFAULT '';
+ALTER TABLE sales ADD COLUMN IF NOT EXISTS cash_refund NUMERIC(12, 2) NOT NULL DEFAULT 0;
+
+-- The type CHECK is replaced rather than added to, so re-running this file after
+-- the vocabulary grows widens the constraint instead of failing against it.
+ALTER TABLE sales DROP CONSTRAINT IF EXISTS sales_type_check;
+ALTER TABLE sales ADD CONSTRAINT sales_type_check
+  CHECK (type IN ('sale', 'return', 'purchase', 'waste', 'adjustment'));
 
 CREATE TABLE IF NOT EXISTS sale_items (
   id BIGSERIAL PRIMARY KEY,
@@ -88,14 +113,22 @@ ALTER TABLE sale_items DROP COLUMN IF EXISTS variant_id;
 
 -- The customer ledger: 'sale' entries record credit extended, 'payment' entries
 -- record money received against a specific invoice.
+--
+-- A return's credit is written as ordinary 'payment' rows against the invoices it
+-- pays off, so sale_payments and customer_totals below need no special case for
+-- it. return_sale_id says which return produced them, which is what lets a
+-- deleted return take its own credits with it.
 CREATE TABLE IF NOT EXISTS debt_transactions (
   id TEXT PRIMARY KEY,
   customer_id TEXT NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
   sale_id TEXT REFERENCES sales(id) ON DELETE CASCADE,
+  return_sale_id TEXT REFERENCES sales(id) ON DELETE CASCADE,
   type TEXT NOT NULL CHECK (type IN ('sale', 'payment')),
   amount NUMERIC(12, 2) NOT NULL,
   transaction_date TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+ALTER TABLE debt_transactions ADD COLUMN IF NOT EXISTS return_sale_id TEXT REFERENCES sales(id) ON DELETE CASCADE;
 
 CREATE TABLE IF NOT EXISTS expenses (
   id TEXT PRIMARY KEY,
@@ -113,6 +146,8 @@ CREATE INDEX IF NOT EXISTS sale_items_sale_idx ON sale_items (sale_id);
 CREATE INDEX IF NOT EXISTS sale_items_product_idx ON sale_items (product_id);
 CREATE INDEX IF NOT EXISTS debt_transactions_customer_idx ON debt_transactions (customer_id);
 CREATE INDEX IF NOT EXISTS debt_transactions_sale_idx ON debt_transactions (sale_id);
+CREATE INDEX IF NOT EXISTS debt_transactions_return_idx ON debt_transactions (return_sale_id);
+CREATE INDEX IF NOT EXISTS sales_type_idx ON sales (type);
 CREATE INDEX IF NOT EXISTS expenses_date_idx ON expenses (expense_date);
 
 -- What a credit invoice has actually been paid, straight from the ledger.

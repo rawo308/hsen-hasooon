@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>H.H Fruit &ndash; Gestion des stocks et des ventes</title>
-    <link rel="stylesheet" href="/styles.css?v=26" />
+    <link rel="stylesheet" href="/styles.css?v=27" />
   </head>
   <body>
     <div class="app-shell">
@@ -17,11 +17,13 @@
         <nav class="nav-menu">
           <button class="nav-btn active" data-tab="dashboard">Tableau de bord</button>
           <button class="nav-btn" data-tab="pos">Ventes / Caisse</button>
+          <button class="nav-btn" data-tab="purchases">Achats</button>
           <button class="nav-btn" data-tab="sales-history">Historique des ventes</button>
           <button class="nav-btn" data-tab="products">Produits</button>
           <button class="nav-btn" data-tab="customers">Clients</button>
           <button class="nav-btn" data-tab="debts">Dettes clients</button>
           <button class="nav-btn" data-tab="expenses">Dépenses</button>
+          <button class="nav-btn" data-tab="reports">Rapports</button>
         </nav>
 
         <button type="button" id="logout-btn" class="logout-btn">Se déconnecter</button>
@@ -106,7 +108,7 @@
                   <p class="section-kicker">Catalogue</p>
                   <h3>Produits</h3>
                 </div>
-                <span class="catalog-hint">Cliquez sur Ajouter pour créer la vente</span>
+                <span class="catalog-hint" id="pos-catalog-hint">Cliquez sur Ajouter pour créer la vente</span>
               </div>
               <label class="search-field">
                 <span>Rechercher un produit</span>
@@ -126,6 +128,7 @@
               <div class="pos-mode-toggle" role="group" aria-label="Type de transaction">
                 <button type="button" class="pos-mode-btn active" data-pos-mode="sale" aria-pressed="true">Vente</button>
                 <button type="button" class="pos-mode-btn" data-pos-mode="return" aria-pressed="false">Retour</button>
+                <button type="button" class="pos-mode-btn" data-pos-mode="waste" aria-pressed="false">Perte</button>
               </div>
               <div id="cart-items" class="cart-items"></div>
               <div class="totals-box">
@@ -134,11 +137,12 @@
                   <span>Remise (%)</span>
                   <input id="sale-discount-percent" type="number" min="0" max="100" step="0.01" value="0" />
                 </label>
-                <div class="total-row checkout-discount-row"><span>Remise</span><strong id="checkout-discount-value">0 F CFA</strong></div>
+                <div class="total-row checkout-discount-row" id="checkout-discount-row"><span>Remise</span><strong id="checkout-discount-value">0 F CFA</strong></div>
                 <div class="total-row grand-total"><span id="total-label">Total</span><strong id="total-value">0 F CFA</strong></div>
               </div>
 
               <div class="sale-form">
+                <div id="pos-customer-block">
                 <div class="form-section-title" id="pos-customer-section-title">Client et paiement</div>
                 <div class="history-customer-picker pos-customer-picker">
                   <label for="pos-customer-search">Client</label>
@@ -153,6 +157,7 @@
                   <input id="new-customer-phone" type="text" placeholder="Numéro de téléphone" />
                   <input id="new-customer-address" type="text" placeholder="Adresse (facultatif)" />
                   <button type="button" id="create-customer-from-pos" class="secondary-btn">Ajouter le client</button>
+                </div>
                 </div>
 
                 <div id="pos-payment-fields" class="pos-payment-fields">
@@ -169,7 +174,20 @@
                     <input id="partial-payment-amount" type="number" min="0.01" step="0.01" placeholder="Saisir le montant payé" />
                   </label>
                 </div>
-                <p id="pos-return-note" class="pos-return-note hidden">Le stock des produits sélectionnés sera réapprovisionné. Le client est facultatif.</p>
+                <div id="pos-waste-fields" class="pos-waste-fields hidden">
+                  <label>
+                    <span>Motif de la perte</span>
+                    <select id="waste-reason">
+                      <option value="Pourriture">Pourriture</option>
+                      <option value="Casse">Casse</option>
+                      <option value="Invendu">Invendu</option>
+                      <option value="Vol">Vol</option>
+                      <option value="Autre">Autre</option>
+                    </select>
+                  </label>
+                  <p class="pos-return-note">Les produits seront retirés du stock. La perte est valorisée au prix de vente.</p>
+                </div>
+                <p id="pos-return-note" class="pos-return-note hidden">Le stock des produits sélectionnés sera réapprovisionné. Le montant est déduit de la dette du client, le reste est rendu en espèces.</p>
 
                 <button id="complete-sale-btn" class="primary-btn">Finaliser la vente</button>
                 <div id="pos-message" class="message-box"></div>
@@ -337,8 +355,7 @@
               <select id="expense-type-filter">
                 <option value="all">Tous</option>
                 <option value="Salaires">Salaires</option>
-                <option value="Produits gaspillés">Produits gaspillés</option>
-                <option value="Réparation / Maintenance">Réparation / Maintenance</option>
+                  <option value="Réparation / Maintenance">Réparation / Maintenance</option>
                 <option value="Amélioration / Mise à niveau">Amélioration / Mise à niveau</option>
                 <option value="Autre">Autre</option>
               </select>
@@ -372,6 +389,97 @@
           <div id="debt-route-view"></div>
         </section>
 
+        <section id="purchases" class="tab-panel">
+          <header class="panel-header">
+            <div>
+              <p class="eyebrow">Entrée de stock</p>
+              <h2 id="purchase-page-title">Nouvel achat</h2>
+              <p class="page-subtitle">Enregistrez une livraison fournisseur : les produits, ce qu’ils ont coûté, et le stock est mis à jour.</p>
+            </div>
+            <span class="status-pill">Achat</span>
+          </header>
+
+          <div class="pos-layout">
+            <div class="card product-area">
+              <div class="card-header">
+                <div>
+                  <p class="eyebrow">Catalogue</p>
+                  <h3>Produits</h3>
+                </div>
+              </div>
+              <input id="purchase-product-search" type="search" placeholder="Rechercher un produit" autocomplete="off" />
+              <div id="purchase-product-list" class="catalog-list" translate="no"></div>
+            </div>
+
+            <div class="card cart-area" id="purchase-cart-area">
+              <div class="card-header">
+                <div>
+                  <p class="eyebrow">Réception</p>
+                  <h3>Achat en cours</h3>
+                </div>
+                <span id="purchase-count" class="cart-count">0 article</span>
+              </div>
+
+              <div id="purchase-cart-items" class="cart-items"></div>
+
+              <div class="totals-box">
+                <div class="total-row grand-total"><span>Total de l’achat</span><strong id="purchase-total-value">0 F CFA</strong></div>
+              </div>
+
+              <div class="sale-form">
+                <div class="form-section-title">Fournisseur</div>
+                <label class="field-wide">
+                  <span>Nom du fournisseur <span class="subtle">(facultatif)</span></span>
+                  <input id="purchase-supplier" type="text" placeholder="ex. Marché de gros" autocomplete="off" />
+                </label>
+                <p class="pos-return-note">Le stock sera augmenté des quantités reçues. Le prix saisi est le prix d’achat, pas le prix de vente.</p>
+                <button id="complete-purchase-btn" class="primary-btn">Enregistrer l’achat</button>
+                <div id="purchase-message" class="message-box"></div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section id="reports" class="tab-panel">
+          <header class="panel-header">
+            <div>
+              <p class="eyebrow">Suivi interne</p>
+              <h2>Rapports</h2>
+              <p class="page-subtitle">Tous les mouvements d’une journée ou d’une période : ventes, achats, retours, pertes et dépenses.</p>
+            </div>
+            <button type="button" id="export-report-btn" class="secondary-btn">Exporter en PDF</button>
+          </header>
+
+          <div class="card report-controls">
+            <div class="report-mode-toggle" role="group" aria-label="Période du rapport">
+              <button type="button" class="pos-mode-btn active" data-report-mode="day" aria-pressed="true">Par jour</button>
+              <button type="button" class="pos-mode-btn" data-report-mode="range" aria-pressed="false">Par période</button>
+            </div>
+
+            <div class="report-date-fields">
+              <label id="report-day-field"><span>Date</span><input type="date" id="report-day" /></label>
+              <label id="report-start-field" class="hidden"><span>Du</span><input type="date" id="report-start" /></label>
+              <label id="report-end-field" class="hidden"><span>Au</span><input type="date" id="report-end" /></label>
+            </div>
+
+            <div class="report-category-field">
+              <span class="report-field-label">Catégorie</span>
+              <div class="report-categories" role="group" aria-label="Catégorie">
+                <button type="button" class="report-chip active" data-report-category="all" aria-pressed="true">Tout</button>
+                <button type="button" class="report-chip" data-report-category="money" aria-pressed="false">Argent</button>
+                <button type="button" class="report-chip" data-report-category="sale" aria-pressed="false">Ventes</button>
+                <button type="button" class="report-chip" data-report-category="purchase" aria-pressed="false">Achats</button>
+                <button type="button" class="report-chip" data-report-category="return" aria-pressed="false">Retours</button>
+                <button type="button" class="report-chip" data-report-category="waste" aria-pressed="false">Pertes</button>
+                <button type="button" class="report-chip" data-report-category="expense" aria-pressed="false">Dépenses</button>
+                <button type="button" class="report-chip" data-report-category="adjustment" aria-pressed="false">Ajustements</button>
+              </div>
+            </div>
+          </div>
+
+          <div id="report-view"></div>
+        </section>
+
       </main>
     </div>
 
@@ -391,7 +499,6 @@
             <span>Type de dépense</span>
             <select id="expense-type" required>
               <option value="Salaires">Salaires</option>
-              <option value="Produits gaspillés">Produits gaspillés</option>
               <option value="Réparation / Maintenance">Réparation / Maintenance</option>
               <option value="Amélioration / Mise à niveau">Amélioration / Mise à niveau</option>
               <option value="Autre">Autre</option>
@@ -484,7 +591,9 @@
       </div>
     </div>
 
-    <div id="receipt-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="receipt-title">
+    <div id="report-print-sheet" class="print-target report-print-sheet" aria-hidden="true"></div>
+
+    <div id="receipt-modal" class="modal hidden print-target" role="dialog" aria-modal="true" aria-labelledby="receipt-title">
       <div class="modal-content receipt-modal-content printable-invoice">
         <div id="receipt-content"></div>
         <div class="modal-actions">
@@ -522,6 +631,6 @@
       </form>
     </div>
 
-    <script src="/app.js?v=26"></script>
+    <script src="/app.js?v=27"></script>
   </body>
 </html>

@@ -2654,16 +2654,23 @@ textarea {
     visibility: hidden;
   }
 
-  #receipt-modal,
-  #receipt-modal * {
+  .print-target,
+  .print-target * {
     visibility: visible;
   }
 
-  #receipt-modal {
+  /* Only the sheet being printed is positioned over the page; the other keeps
+     its own display rule, which for both of them is 'hidden' when not in use. */
+  #receipt-modal:not(.hidden),
+  #report-print-sheet.is-printing {
     position: absolute;
     inset: 0;
     display: block;
     background: white;
+  }
+
+  #receipt-modal.hidden {
+    display: none;
   }
 
   .receipt-modal-content {
@@ -2700,8 +2707,19 @@ textarea {
     break-inside: avoid;
   }
 
-  .inv-table thead {
+  .inv-table thead,
+  .report-table thead {
     display: table-header-group;
+  }
+
+  .report-table th {
+    position: static;
+  }
+
+  .report-print-head,
+  .report-print-summary,
+  .report-table tr {
+    break-inside: avoid;
   }
 
   .inv-table tr {
@@ -3886,7 +3904,7 @@ body.is-loading .main-panel {
 /* --- POS Vente / Retour mode ---------------------------------------------- */
 .pos-mode-toggle {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(3, 1fr);
   gap: 4px;
   margin-bottom: 14px;
   padding: 4px;
@@ -4247,3 +4265,292 @@ body.is-loading .main-panel {
     max-width: none;
   }
 }
+
+/* --- Rapports -------------------------------------------------------------- */
+.report-controls {
+  display: grid;
+  gap: 14px;
+  margin-bottom: 16px;
+}
+
+.report-mode-toggle {
+  display: inline-flex;
+  gap: 6px;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--panel-soft);
+  width: fit-content;
+}
+
+.report-date-fields {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.report-date-fields label {
+  display: grid;
+  gap: 4px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.report-date-fields input {
+  min-width: 170px;
+}
+
+.report-field-label {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.report-categories {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.report-chip {
+  padding: 6px 14px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--panel);
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.report-chip:hover {
+  border-color: var(--accent-line);
+  color: var(--text);
+}
+
+.report-chip.active {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: #fff;
+}
+
+.report-period {
+  margin: 0 0 14px;
+  color: var(--muted);
+  font-size: 0.85rem;
+  font-weight: 600;
+  text-transform: capitalize;
+}
+
+.report-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.report-tiles-stock {
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+}
+
+.report-tile {
+  display: grid;
+  gap: 4px;
+  padding: 16px 18px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--panel);
+  box-shadow: var(--shadow);
+}
+
+.report-tile-compact {
+  padding: 12px 14px;
+  background: var(--panel-soft);
+  box-shadow: none;
+}
+
+.report-tile-label {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.report-tile-value {
+  color: var(--text);
+  font-size: 1.35rem;
+  font-weight: 800;
+}
+
+.report-tile-compact .report-tile-value {
+  font-size: 1.1rem;
+}
+
+.report-tile small {
+  color: var(--muted);
+  font-size: 0.74rem;
+}
+
+.report-table-wrap {
+  max-height: min(56vh, 520px);
+  overflow: auto;
+}
+
+.report-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.report-table th,
+.report-table td {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  font-size: 0.85rem;
+  vertical-align: top;
+}
+
+.report-table th {
+  position: sticky;
+  top: 0;
+  background: var(--panel-soft);
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.report-table .report-num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.report-detail {
+  display: block;
+  color: var(--muted);
+  font-size: 0.74rem;
+}
+
+.report-empty {
+  margin: 0;
+  padding: 28px 8px;
+  color: var(--muted);
+  text-align: center;
+}
+
+/* One colour per movement, so a column of pills reads at a glance. */
+.report-pill-sale { background: #e8f4e8; color: #1f6a38; }
+.report-pill-purchase { background: #e6effa; color: #1d4e89; }
+.report-pill-return { background: #fdf0e1; color: #92400e; }
+.report-pill-waste { background: #fae8e8; color: #a3231b; }
+.report-pill-expense { background: #f1ecf9; color: #573b8c; }
+.report-pill-adjustment { background: #eceff1; color: #4a5b63; }
+
+/* The printable sheet: built on demand, off-screen until the print job runs. */
+.report-print-sheet {
+  display: none;
+}
+
+.report-print-sheet.is-printing {
+  display: block;
+}
+
+.report-print-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 18px 20px 12px;
+}
+
+.report-print-head h2 {
+  margin: 2px 0 0;
+}
+
+.report-print-meta {
+  display: grid;
+  gap: 4px;
+  text-align: right;
+}
+
+.report-print-meta span {
+  margin-right: 8px;
+  color: #55705e;
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+}
+
+.report-print-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1px;
+  margin: 0 20px 16px;
+  border: 1px solid #cfe3d3;
+  border-radius: 10px;
+  background: #cfe3d3;
+  overflow: hidden;
+}
+
+.report-print-summary div {
+  display: grid;
+  gap: 2px;
+  padding: 9px 12px;
+  background: #f7fbf6;
+}
+
+.report-print-summary span {
+  color: #55705e;
+  font-size: 0.64rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.report-print-summary strong {
+  font-size: 0.92rem;
+  font-weight: 800;
+}
+
+.report-document .card {
+  margin: 0 20px 16px;
+  border: 1px solid #cfe3d3;
+  box-shadow: none;
+}
+
+.report-document .report-table-wrap {
+  max-height: none;
+  overflow: visible;
+}
+
+/* --- Achats ---------------------------------------------------------------- */
+.pos-waste-fields {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.pos-waste-fields label {
+  display: grid;
+  gap: 4px;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+/* Perte borrows the warning treatment that Retour already uses, one step hotter. */
+.pos-mode-btn[data-pos-mode="waste"].active {
+  background: #a3231b;
+  border-color: #a3231b;
+  color: #fff;
+}
+
+#purchase-cart-area .cart-line-total strong {
+  color: #1d4e89;
+}
+

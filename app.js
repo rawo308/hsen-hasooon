@@ -271,7 +271,7 @@ function getCustomerPurchasesForRange(customerId, range) {
   const { start, end } = getCustomerPurchaseRangeBounds(range);
   if (!start || !end) return [];
   return state.sales
-    .filter((sale) => sale.customerId === customerId && !isReturn(sale))
+    .filter((sale) => sale.customerId === customerId && isCustomerSale(sale))
     .filter((sale) => {
       const date = new Date(sale.createdAt);
       return date >= start && date <= end;
@@ -303,7 +303,7 @@ function matchesDateRangeFilter(createdAt, filter) {
 
 function getCustomerPurchaseTotalForFilter(customerId, filter) {
   return state.sales
-    .filter((sale) => sale.customerId === customerId && !isReturn(sale))
+    .filter((sale) => sale.customerId === customerId && isCustomerSale(sale))
     .filter((sale) => matchesDateRangeFilter(sale.createdAt, filter))
     .reduce((sum, sale) => sum + Number(sale.totalAmount || 0), 0);
 }
@@ -334,12 +334,22 @@ function getProductById(productId) {
 
 // Transactions recorded before returns existed carry no type, so anything that
 // is not explicitly a return is a sale.
+// The five kinds of row in state.sales. Anything unrecognised is read as a sale,
+// which is what a row written before the ledger grew these types would be.
+const TRANSACTION_TYPES = ['sale', 'return', 'purchase', 'waste', 'adjustment'];
+
 function getTransactionType(transaction) {
-  return transaction?.type === 'return' ? 'return' : 'sale';
+  return TRANSACTION_TYPES.includes(transaction?.type) ? transaction.type : 'sale';
 }
 
 function isReturn(transaction) {
   return getTransactionType(transaction) === 'return';
+}
+
+// A customer-facing sale, as opposed to a supplier delivery, a write-off or a
+// stock correction. Revenue, invoices and customer history all mean this.
+function isCustomerSale(transaction) {
+  return getTransactionType(transaction) === 'sale';
 }
 
 // hydrate drops every key before assigning, so a collection the server did not
@@ -388,7 +398,7 @@ function getInvoiceHistoryLabel(customer, sale) {
 
 function getCustomerCreditInvoices(customerId, outstandingOnly = false) {
   return state.sales
-    .filter((sale) => sale.customerId === customerId && !isReturn(sale) && sale.paymentMethod === 'debt')
+    .filter((sale) => sale.customerId === customerId && isCustomerSale(sale) && sale.paymentMethod === 'debt')
     .filter((sale) => !outstandingOnly || getInvoiceRemainingAmount(sale) > 0)
     .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 }
@@ -497,9 +507,10 @@ function renderDashboard() {
   const debtTotal = state.customers.reduce((sum, customer) => sum + Number(customer.balance || 0), 0);
 
   const { start, end, label, countLabel, listLabel, emptyLabel } = getIncomeRangeBounds();
-  // Returns are a separate transaction type: they are neither revenue nor a checkout.
+  // Only a sale is revenue. Returns, purchases, write-offs and stock corrections
+  // are all movements of their own and belong in Rapports, not in the takings.
   const rangeSales = state.sales.filter((sale) => {
-    if (isReturn(sale)) return false;
+    if (!isCustomerSale(sale)) return false;
     const saleDate = new Date(sale.createdAt);
     return saleDate >= start && saleDate <= end;
   });
@@ -572,21 +583,83 @@ function applyCustomIncomeRange() {
   renderDashboard();
 }
 
+// Everything that distinguishes the register's three modes. Held as data so the
+// wording, the constraints and the hidden blocks cannot drift apart, and so a
+// fourth mode is a new entry rather than another branch in five functions.
+//
+//   stockLimited  can the cart hold more units than are on the shelf
+//   wantsCustomer is the customer picker shown
+const POS_MODES = {
+  sale: {
+    stockLimited: true,
+    wantsCustomer: true,
+    pageTitle: 'Nouvelle vente',
+    pageSubtitle: 'Choisissez les produits, vérifiez la commande et encaissez.',
+    statusPill: 'Prêt à vendre',
+    cartKicker: 'Encaissement',
+    cartTitle: 'Vente en cours',
+    catalogHint: 'Cliquez sur Ajouter pour créer la vente',
+    totalLabel: 'Total',
+    submitLabel: 'Finaliser la vente',
+    customerTitle: 'Client et paiement',
+    switchMessage: 'Mode Vente actif.'
+  },
+  return: {
+    stockLimited: false,
+    wantsCustomer: true,
+    pageTitle: 'Nouveau retour',
+    pageSubtitle: 'Choisissez les produits retournés, vérifiez les quantités et validez le retour.',
+    statusPill: 'Mode retour',
+    cartKicker: 'Retour',
+    cartTitle: 'Retour en cours',
+    catalogHint: 'Cliquez sur Ajouter pour enregistrer le retour',
+    totalLabel: 'Total du retour',
+    submitLabel: 'Finaliser le retour',
+    customerTitle: 'Client (facultatif)',
+    switchMessage: 'Mode Retour actif. Le stock sera réapprovisionné et le montant remboursé.'
+  },
+  waste: {
+    stockLimited: true,
+    wantsCustomer: false,
+    pageTitle: 'Nouvelle perte',
+    pageSubtitle: 'Choisissez les produits perdus, indiquez le motif et enregistrez la perte.',
+    statusPill: 'Mode perte',
+    cartKicker: 'Perte',
+    cartTitle: 'Perte en cours',
+    catalogHint: 'Cliquez sur Ajouter pour déclarer la perte',
+    totalLabel: 'Valeur de la perte',
+    submitLabel: 'Enregistrer la perte',
+    customerTitle: '',
+    switchMessage: 'Mode Perte actif. Les produits seront retirés du stock.'
+  }
+};
+
 function isReturnMode() {
   return posMode === 'return';
 }
 
-// Switches the register between Vente and Retour. The cart, catalogue and
+function isWasteMode() {
+  return posMode === 'waste';
+}
+
+// True when the cart may not exceed what is on the shelf. A return is the one
+// mode that may, since the units are coming back in.
+function isStockLimitedMode() {
+  return POS_MODES[posMode].stockLimited;
+}
+
+// Switches the register between Vente, Retour and Perte. The cart, catalogue and
 // customer picker are shared; only the constraints and wording change.
 function setPosMode(mode) {
-  const nextMode = mode === 'return' ? 'return' : 'sale';
+  const nextMode = Object.prototype.hasOwnProperty.call(POS_MODES, mode) ? mode : 'sale';
   if (nextMode === posMode) return;
   posMode = nextMode;
 
-  // A return may hold more units than are in stock; a sale may not. Clamp on the
-  // way back so a return-sized cart can never oversell.
+  // A return may hold more units than are in stock; a sale or a write-off may
+  // not. Clamp on the way into a limited mode so an oversized cart can never
+  // oversell.
   let adjusted = false;
-  if (!isReturnMode()) {
+  if (isStockLimitedMode()) {
     cart = cart.filter((item) => {
       const available = getAvailableStock(getProductById(item.productId));
       if (available < 1) { adjusted = true; return false; }
@@ -601,18 +674,24 @@ function setPosMode(mode) {
   showMessage(
     'pos-message',
     adjusted
-      ? 'Mode Vente : les quantités ont été ajustées au stock disponible.'
-      : isReturnMode() ? 'Mode Retour actif. Le stock sera réapprovisionné.' : 'Mode Vente actif.',
+      ? 'Les quantités ont été ajustées au stock disponible.'
+      : POS_MODES[posMode].switchMessage,
     adjusted ? 'error' : 'info'
   );
 }
 
-// Every piece of return-mode wording and styling lives here so the two modes
-// can never drift apart.
+// Every piece of per-mode wording and styling lives here so the modes can never
+// drift apart.
 function applyPosMode() {
+  const mode = POS_MODES[posMode];
   const returning = isReturnMode();
-  document.getElementById('cart-area')?.classList.toggle('is-return-mode', returning);
-  document.getElementById('pos')?.classList.toggle('is-return-mode', returning);
+  const wasting = isWasteMode();
+
+  ['cart-area', 'pos'].forEach((id) => {
+    const element = document.getElementById(id);
+    element?.classList.toggle('is-return-mode', returning);
+    element?.classList.toggle('is-waste-mode', wasting);
+  });
   document.querySelectorAll('[data-pos-mode]').forEach((button) => {
     const active = button.dataset.posMode === posMode;
     button.classList.toggle('active', active);
@@ -620,21 +699,25 @@ function applyPosMode() {
   });
 
   const text = (id, value) => { const el = document.getElementById(id); if (el) el.textContent = value; };
-  text('pos-page-title', returning ? 'Nouveau retour' : 'Nouvelle vente');
-  text('pos-page-subtitle', returning
-    ? 'Choisissez les produits retournés, vérifiez les quantités et validez le retour.'
-    : 'Choisissez les produits, vérifiez la commande et encaissez.');
-  text('pos-status-pill', returning ? 'Mode retour' : 'Prêt à vendre');
-  text('cart-kicker', returning ? 'Retour' : 'Encaissement');
-  text('cart-title', returning ? 'Retour en cours' : 'Vente en cours');
-  text('total-label', returning ? 'Total du retour' : 'Total');
-  text('complete-sale-btn', returning ? 'Finaliser le retour' : 'Finaliser la vente');
-  text('pos-customer-section-title', returning ? 'Client (facultatif)' : 'Client et paiement');
+  text('pos-page-title', mode.pageTitle);
+  text('pos-page-subtitle', mode.pageSubtitle);
+  text('pos-status-pill', mode.statusPill);
+  text('cart-kicker', mode.cartKicker);
+  text('cart-title', mode.cartTitle);
+  text('pos-catalog-hint', mode.catalogHint);
+  text('total-label', mode.totalLabel);
+  text('complete-sale-btn', mode.submitLabel);
+  if (mode.customerTitle) text('pos-customer-section-title', mode.customerTitle);
 
-  document.getElementById('pos-payment-fields')?.classList.toggle('hidden', returning);
-  document.getElementById('sale-discount-field')?.classList.toggle('hidden', returning);
+  // Payment and discount belong to a sale alone; the customer block to anything
+  // with a customer; the notes to the mode that needs explaining.
+  document.getElementById('pos-payment-fields')?.classList.toggle('hidden', posMode !== 'sale');
+  document.getElementById('sale-discount-field')?.classList.toggle('hidden', posMode !== 'sale');
+  document.getElementById('checkout-discount-row')?.classList.toggle('hidden', posMode !== 'sale');
+  document.getElementById('pos-customer-block')?.classList.toggle('hidden', !mode.wantsCustomer);
   document.getElementById('pos-return-note')?.classList.toggle('hidden', !returning);
-  if (returning) document.getElementById('partial-payment-field')?.classList.add('hidden');
+  document.getElementById('pos-waste-fields')?.classList.toggle('hidden', !wasting);
+  if (posMode !== 'sale') document.getElementById('partial-payment-field')?.classList.add('hidden');
 }
 
 function renderPosProducts() {
@@ -643,14 +726,14 @@ function renderPosProducts() {
 
   const container = document.getElementById('pos-product-list');
   // A returned product can be out of stock, so return mode never disables Ajouter.
-  const returning = isReturnMode();
+  const limited = isStockLimitedMode();
   container.innerHTML = list.map((product) => `
     <div class="catalog-item">
       <div class="meta">
         <strong>${product.name}</strong>
         <small>${getAvailableStock(product)} en stock · ${formatMoney(product.sellingPrice)}</small>
       </div>
-      <button class="add-btn primary-btn" data-add-product="${product.id}" ${!returning && getAvailableStock(product) < 1 ? 'disabled' : ''}>Ajouter</button>
+      <button class="add-btn primary-btn" data-add-product="${product.id}" ${limited && getAvailableStock(product) < 1 ? 'disabled' : ''}>Ajouter</button>
     </div>
   `).join('');
 
@@ -665,7 +748,7 @@ function addToCart(productId) {
   const itemKey = getCartItemKey(productId);
   const existing = cart.find((item) => item.key === itemKey);
   // Stock only limits what can be sold; a return puts units back.
-  if (!isReturnMode() && getAvailableStock(product) <= (existing?.quantity || 0)) return;
+  if (isStockLimitedMode() && getAvailableStock(product) <= (existing?.quantity || 0)) return;
 
   if (existing) {
     existing.quantity += 1;
@@ -682,15 +765,19 @@ function addToCart(productId) {
   renderCart();
 }
 
+const EMPTY_CART_MESSAGES = {
+  sale: '<div class="empty-cart"><span class="empty-cart-icon">+</span><strong>Votre vente est vide</strong><p>Ajoutez des produits au catalogue pour commencer.</p></div>',
+  return: '<div class="empty-cart"><span class="empty-cart-icon">&#8630;</span><strong>Votre retour est vide</strong><p>Ajoutez les produits retournés pour commencer.</p></div>',
+  waste: '<div class="empty-cart"><span class="empty-cart-icon">&#9888;</span><strong>Aucune perte enregistrée</strong><p>Ajoutez les produits perdus pour commencer.</p></div>'
+};
+
 function renderCart() {
   const cartContainer = document.getElementById('cart-items');
   const cartCount = document.getElementById('cart-count');
   const totalItems = cart.reduce((total, item) => total + item.quantity, 0);
   cartCount.textContent = `${totalItems} article${totalItems === 1 ? '' : 's'}`;
   if (!cart.length) {
-    cartContainer.innerHTML = isReturnMode()
-      ? '<div class="empty-cart"><span class="empty-cart-icon">&#8630;</span><strong>Votre retour est vide</strong><p>Ajoutez les produits retournés pour commencer.</p></div>'
-      : '<div class="empty-cart"><span class="empty-cart-icon">+</span><strong>Votre vente est vide</strong><p>Ajoutez des produits au catalogue pour commencer.</p></div>';
+    cartContainer.innerHTML = EMPTY_CART_MESSAGES[posMode];
     document.getElementById('subtotal-value').textContent = formatMoney(0);
     document.getElementById('checkout-discount-value').textContent = formatMoney(0);
     document.getElementById('total-value').textContent = formatMoney(0);
@@ -724,7 +811,7 @@ function renderCart() {
       if (!item) return;
       const product = getProductById(item.productId);
       const requested = Math.max(1, Math.floor(Number(event.target.value) || 1));
-      item.quantity = isReturnMode() ? requested : Math.min(requested, getAvailableStock(product));
+      item.quantity = isStockLimitedMode() ? Math.min(requested, getAvailableStock(product)) : requested;
       renderCart();
     });
   });
@@ -746,7 +833,8 @@ function renderCart() {
   });
 
   const subtotal = getCartTotal();
-  const discountPercent = isReturnMode() ? 0 : saleDiscountPercent;
+  // Nothing is negotiated on a return or a write-off, so only a sale discounts.
+  const discountPercent = posMode === 'sale' ? saleDiscountPercent : 0;
   const discount = subtotal * discountPercent / 100;
   document.getElementById('subtotal-value').textContent = formatMoney(subtotal);
   document.getElementById('checkout-discount-value').textContent = discount > 0 ? `-${formatMoney(discount)}` : formatMoney(0);
@@ -1548,6 +1636,7 @@ function renderSalesHistory() {
   const paymentFilter = document.getElementById('history-payment-filter').value;
 
   const filtered = state.sales.filter((sale) => {
+    if (!isCustomerSale(sale) && !isReturn(sale)) return false;
     const customer = getCustomerById(sale.customerId);
     const customerMatch = !customerFilter || (customer && customer.name.toLowerCase().includes(customerFilter));
     const dateMatch = !dateFilter || new Date(sale.createdAt).toISOString().slice(0, 10) === dateFilter;
@@ -1998,11 +2087,17 @@ async function confirmPaymentRecord() {
   showMessage('payment-message', `Paiement de ${formatMoney(paymentAmount)} enregistré sur la facture n°${invoiceNumber}.`, 'success');
 }
 
+const EMPTY_CART_ERRORS = {
+  sale: 'Ajoutez au moins un produit à la vente.',
+  return: 'Ajoutez au moins un produit au retour.',
+  waste: 'Ajoutez au moins un produit à la perte.'
+};
+
 function completeSale() {
   const returning = isReturnMode();
 
   if (!cart.length) {
-    showMessage('pos-message', returning ? 'Ajoutez au moins un produit au retour.' : 'Ajoutez au moins un produit à la vente.', 'error');
+    showMessage('pos-message', EMPTY_CART_ERRORS[posMode], 'error');
     return;
   }
   if (cart.some((item) => !Number.isFinite(item.quantity) || item.quantity < 1)) {
@@ -2013,7 +2108,20 @@ function completeSale() {
   const customerId = selectedPosCustomerId;
   const totalAmount = getCartTotal();
 
-  // A return is not a payment: no method, no credit, and the client stays optional.
+  // A write-off has no counterparty and no tender: products leave the shelf and
+  // the shop absorbs their selling value as the loss.
+  if (isWasteMode()) {
+    const reason = document.getElementById('waste-reason')?.value || 'Autre';
+    pendingSale = { type: 'waste', reason, totalAmount, items: structuredClone(cart) };
+    document.getElementById('sale-confirm-title').textContent = 'Enregistrer cette perte ?';
+    document.getElementById('sale-confirm-text').textContent =
+      `${formatMoney(totalAmount)} · ${cart.length} article${cart.length === 1 ? '' : 's'} · Motif : ${reason} · Retiré du stock`;
+    document.getElementById('sale-confirm-modal').classList.remove('hidden');
+    return;
+  }
+
+  // A return is not a payment: the refund settles the customer's debt first and
+  // only the remainder leaves the till, so the client stays optional.
   if (returning) {
     pendingSale = { type: 'return', customerId: customerId || null, totalAmount, items: structuredClone(cart) };
     const customer = customerId ? getCustomerById(customerId) : null;
@@ -2057,6 +2165,7 @@ async function confirmSale() {
 
   try {
     if (pendingSale.type === 'return') await confirmReturn();
+    else if (pendingSale.type === 'waste') await confirmWaste();
     else await confirmSaleTransaction();
   } finally {
     isCompletingTransaction = false;
@@ -2064,8 +2173,21 @@ async function confirmSale() {
   }
 }
 
-// An independent Retour transaction: it never looks up, links to, or edits an
-// existing sale, and it leaves every customer balance and total alone.
+// Resets the register after any completed transaction.
+function clearPos() {
+  cart = [];
+  saleDiscountPercent = 0;
+  selectedPosCustomerId = null;
+  const search = document.getElementById('pos-customer-search');
+  if (search) search.value = '';
+  const discount = document.getElementById('sale-discount-percent');
+  if (discount) discount.value = '';
+  closeSaleConfirmation();
+}
+
+// An independent Retour transaction: it never links to the original invoice.
+// The money is settled against whatever the customer still owes, and the server
+// says how much of it had to come out of the till.
 async function confirmReturn() {
   const { customerId, items } = pendingSale;
   const saved = await mutate('/sales', 'POST', {
@@ -2075,13 +2197,35 @@ async function confirmReturn() {
   });
   if (saved === null) return;
 
-  cart = [];
-  saleDiscountPercent = 0;
-  selectedPosCustomerId = null;
-  document.getElementById('pos-customer-search').value = '';
-  closeSaleConfirmation();
-  showMessage('pos-message', 'Retour enregistré. Le stock a été réapprovisionné.', 'success');
+  clearPos();
+  const credited = Number(saved.sale?.debtCredit || 0);
+  const cashed = Number(saved.sale?.cashRefund || 0);
+  const settlement = credited > 0 && cashed > 0
+    ? `${formatMoney(credited)} déduits de la dette, ${formatMoney(cashed)} rendus en espèces.`
+    : credited > 0
+      ? `${formatMoney(credited)} déduits de la dette du client.`
+      : `${formatMoney(cashed)} rendus en espèces.`;
+  showMessage('pos-message', `Retour enregistré. Le stock a été réapprovisionné. ${settlement}`, 'success');
   openReceipt(saved.sale.id);
+}
+
+// A write-off. There is no counterparty and nothing to hand over, so it produces
+// no receipt -- only the stock movement and the recorded loss.
+async function confirmWaste() {
+  const { reason, items } = pendingSale;
+  const saved = await mutate('/sales', 'POST', {
+    type: 'waste',
+    reason,
+    items: items.map((item) => ({ productId: item.productId, quantity: item.quantity }))
+  });
+  if (saved === null) return;
+
+  clearPos();
+  showMessage(
+    'pos-message',
+    `Perte enregistrée : ${formatMoney(saved.sale.totalAmount)}. Les produits ont été retirés du stock.`,
+    'success'
+  );
 }
 
 async function confirmSaleTransaction() {
@@ -2096,13 +2240,562 @@ async function confirmSaleTransaction() {
   });
   if (saved === null) return;
 
-  cart = [];
-  saleDiscountPercent = 0;
-  selectedPosCustomerId = null;
-  document.getElementById('pos-customer-search').value = '';
-  closeSaleConfirmation();
+  clearPos();
   showMessage('pos-message', 'Vente finalisée avec succès.', 'success');
   openReceipt(saved.sale.id);
+}
+
+// --- Achats -----------------------------------------------------------------
+// Supplier intake. Deliberately its own cart rather than a fourth mode of the
+// register: the till is the one screen the shop runs on all day, and widening it
+// to carry buying prices as well as selling prices would put that at risk for no
+// gain the user can see. The ~40 lines of cart code below are the price of that.
+
+let purchaseCart = [];
+let isSavingPurchase = false;
+
+function getPurchaseTotal() {
+  return purchaseCart.reduce((total, item) => total + item.quantity * item.unitPrice, 0);
+}
+
+function renderPurchaseProducts() {
+  const container = document.getElementById('purchase-product-list');
+  if (!container) return;
+  const search = document.getElementById('purchase-product-search')?.value?.toLowerCase() || '';
+  const list = state.products.filter((product) => product.name.toLowerCase().includes(search));
+
+  // Nothing is ever out of stock for buying, so no button is ever disabled.
+  container.innerHTML = list.length
+    ? list.map((product) => `
+    <div class="catalog-item">
+      <div class="meta">
+        <strong>${escapeHtml(product.name)}</strong>
+        <small>${product.stock} en stock · vente ${formatMoney(product.sellingPrice)}</small>
+      </div>
+      <button class="add-btn primary-btn" data-add-purchase="${product.id}">Ajouter</button>
+    </div>
+  `).join('')
+    : '<div class="empty-cart"><strong>Aucun produit</strong><p>Créez d’abord un produit dans le catalogue.</p></div>';
+
+  container.querySelectorAll('[data-add-purchase]').forEach((button) => {
+    button.addEventListener('click', () => addToPurchase(button.dataset.addPurchase));
+  });
+}
+
+function addToPurchase(productId) {
+  const product = getProductById(productId);
+  if (!product) return;
+  const existing = purchaseCart.find((item) => item.productId === productId);
+  if (existing) existing.quantity += 1;
+  // Seeded from the selling price only as a starting point: it is the one number
+  // we have, and the buyer overwrites it with what was actually paid.
+  else purchaseCart.push({ productId, productName: product.name, quantity: 1, unitPrice: product.sellingPrice });
+  renderPurchaseCart();
+}
+
+function renderPurchaseCart() {
+  const container = document.getElementById('purchase-cart-items');
+  if (!container) return;
+  const count = document.getElementById('purchase-count');
+  const units = purchaseCart.reduce((total, item) => total + item.quantity, 0);
+  if (count) count.textContent = `${units} article${units === 1 ? '' : 's'}`;
+
+  if (!purchaseCart.length) {
+    container.innerHTML = '<div class="empty-cart"><span class="empty-cart-icon">&#8595;</span><strong>Aucun achat en cours</strong><p>Ajoutez les produits reçus du fournisseur.</p></div>';
+    document.getElementById('purchase-total-value').textContent = formatMoney(0);
+    return;
+  }
+
+  container.innerHTML = purchaseCart.map((item) => `
+    <div class="cart-row">
+      <div class="cart-product-name">
+        <strong>${escapeHtml(item.productName)}</strong>
+      </div>
+      <button class="link-btn cart-remove-btn" data-purchase-remove="${item.productId}">Retirer</button>
+      <label class="cart-quantity-field">
+        <span>Quantité</span>
+        <input data-purchase-qty="${item.productId}" type="number" min="1" step="1" value="${item.quantity}" />
+      </label>
+      <div class="price-box">
+        <label for="purchase-price-${item.productId}">Prix d’achat (F CFA)</label>
+        <input id="purchase-price-${item.productId}" data-purchase-price="${item.productId}" type="number" step="0.01" min="0" value="${item.unitPrice}" />
+      </div>
+      <div class="cart-line-total">
+        <span>Total de la ligne</span>
+        <strong>${formatMoney(item.quantity * item.unitPrice)}</strong>
+      </div>
+    </div>
+  `).join('');
+
+  container.querySelectorAll('[data-purchase-qty]').forEach((input) => {
+    input.addEventListener('change', (event) => {
+      const item = purchaseCart.find((entry) => entry.productId === input.dataset.purchaseQty);
+      if (!item) return;
+      item.quantity = Math.max(1, Math.floor(Number(event.target.value) || 1));
+      renderPurchaseCart();
+    });
+  });
+
+  container.querySelectorAll('[data-purchase-price]').forEach((input) => {
+    input.addEventListener('change', (event) => {
+      const item = purchaseCart.find((entry) => entry.productId === input.dataset.purchasePrice);
+      if (!item) return;
+      item.unitPrice = Math.max(0, Number(event.target.value) || 0);
+      renderPurchaseCart();
+    });
+  });
+
+  container.querySelectorAll('[data-purchase-remove]').forEach((button) => {
+    button.addEventListener('click', () => {
+      purchaseCart = purchaseCart.filter((entry) => entry.productId !== button.dataset.purchaseRemove);
+      renderPurchaseCart();
+    });
+  });
+
+  document.getElementById('purchase-total-value').textContent = formatMoney(getPurchaseTotal());
+}
+
+function renderPurchases() {
+  renderPurchaseProducts();
+  renderPurchaseCart();
+}
+
+async function completePurchase() {
+  if (isSavingPurchase) return;
+  if (!purchaseCart.length) {
+    showMessage('purchase-message', 'Ajoutez au moins un produit à l’achat.', 'error');
+    return;
+  }
+
+  isSavingPurchase = true;
+  const button = document.getElementById('complete-purchase-btn');
+  if (button) button.disabled = true;
+
+  try {
+    // Unlike a sale, the unit price is sent: it is what the shop paid, and
+    // nothing in the catalogue knows it.
+    const saved = await mutate('/sales', 'POST', {
+      type: 'purchase',
+      supplier: document.getElementById('purchase-supplier')?.value?.trim() || '',
+      items: purchaseCart.map((item) => ({
+        productId: item.productId,
+        quantity: item.quantity,
+        unitPrice: item.unitPrice
+      }))
+    });
+    if (saved === null) return;
+
+    purchaseCart = [];
+    const supplierField = document.getElementById('purchase-supplier');
+    if (supplierField) supplierField.value = '';
+    renderPurchases();
+    showMessage(
+      'purchase-message',
+      `Achat enregistré : ${formatMoney(saved.sale.totalAmount)}. Le stock a été mis à jour.`,
+      'success'
+    );
+  } finally {
+    isSavingPurchase = false;
+    if (button) button.disabled = false;
+  }
+}
+
+function setupPurchaseListeners() {
+  document.getElementById('purchase-product-search')?.addEventListener('input', renderPurchaseProducts);
+  document.getElementById('complete-purchase-btn')?.addEventListener('click', completePurchase);
+}
+
+// --- Rapports ---------------------------------------------------------------
+// Everything that moved in a day or a period, on one timeline: sales, purchases,
+// returns, write-offs, stock corrections and expenses.
+//
+// Computed in the browser from `state`, because /api/state already ships every
+// transaction on load and the dashboard, the history and the expenses page all
+// filter the same way. That holds for a few thousand transactions; past that this
+// wants to become a server-side aggregate over a date range.
+
+// Label, sign against the till, and which side of the stock ledger each type sits
+// on. `cash` is what the type does to money actually in the drawer.
+const REPORT_TYPES = {
+  sale:       { label: 'Vente',      stock: 'out', chip: 'sale' },
+  purchase:   { label: 'Achat',      stock: 'in',  chip: 'purchase' },
+  return:     { label: 'Retour',     stock: 'in',  chip: 'return' },
+  waste:      { label: 'Perte',      stock: 'out', chip: 'waste' },
+  adjustment: { label: 'Ajustement', stock: 'in',  chip: 'adjustment' },
+  expense:    { label: 'Dépense',    stock: null,  chip: 'expense' }
+};
+
+// Which transaction types each filter chip lets through. 'money' is the cash view:
+// only the types that move money in or out of the till.
+const REPORT_CATEGORIES = {
+  all:        ['sale', 'purchase', 'return', 'waste', 'adjustment', 'expense'],
+  money:      ['sale', 'purchase', 'return', 'expense'],
+  sale:       ['sale'],
+  purchase:   ['purchase'],
+  return:     ['return'],
+  waste:      ['waste'],
+  expense:    ['expense'],
+  adjustment: ['adjustment']
+};
+
+let reportFilters = { mode: 'day', day: '', start: '', end: '', category: 'all' };
+
+// The date filter this page is currently describing, in the shape the shared
+// matchesDateRangeFilter() helper expects.
+function getReportFilter() {
+  if (reportFilters.mode === 'day') {
+    const day = reportFilters.day || toDateInputValue(new Date());
+    return { mode: 'day', start: day, end: day };
+  }
+  return getDateFilterMode(reportFilters.start, reportFilters.end) === 'all'
+    ? { mode: 'all', start: '', end: '' }
+    : { mode: getDateFilterMode(reportFilters.start, reportFilters.end), start: reportFilters.start, end: reportFilters.end };
+}
+
+// An expense carries a plain calendar day rather than a timestamp, so it is
+// compared as one: midday keeps it inside its own day in every timezone.
+function expenseWithinFilter(expense, filter) {
+  return matchesDateRangeFilter(`${expense.date}T12:00:00`, filter);
+}
+
+// What the Détail column names: the counterparty for a sale, the supplier for a
+// delivery, and for the types that have neither, what actually happened.
+function reportRowParty(type, sale, customer) {
+  if (type === 'purchase') return sale.supplier || 'Fournisseur non précisé';
+  if (type === 'waste') return sale.reason || 'Autre';
+  if (type === 'adjustment') return 'Correction de stock';
+  return customer ? customer.name : 'Client de passage';
+}
+
+// Every movement in the period, newest first, as one shape regardless of source.
+function getReportRows() {
+  const filter = getReportFilter();
+  const allowed = new Set(REPORT_CATEGORIES[reportFilters.category] || REPORT_CATEGORIES.all);
+
+  const rows = [];
+
+  for (const sale of state.sales) {
+    const type = getTransactionType(sale);
+    if (!REPORT_TYPES[type] || !allowed.has(type)) continue;
+    if (!matchesDateRangeFilter(sale.createdAt, filter)) continue;
+
+    const customer = sale.customerId ? getCustomerById(sale.customerId) : null;
+    rows.push({
+      id: sale.id,
+      type,
+      at: sale.createdAt,
+      party: reportRowParty(type, sale, customer),
+      detail: type === 'adjustment' && sale.reason ? sale.reason : '',
+      units: sale.items.reduce((total, item) => total + Number(item.quantity || 0), 0),
+      amount: Number(sale.totalAmount || 0),
+      sale
+    });
+  }
+
+  if (allowed.has('expense')) {
+    for (const expense of state.expenses) {
+      if (!expenseWithinFilter(expense, filter)) continue;
+      rows.push({
+        id: expense.id,
+        type: 'expense',
+        at: `${expense.date}T12:00:00`,
+        party: expense.type,
+        detail: expense.note || '',
+        units: 0,
+        amount: Number(expense.amount || 0)
+      });
+    }
+  }
+
+  return rows.sort((a, b) => new Date(b.at) - new Date(a.at));
+}
+
+// Debt payments are their own money event: they are cash arriving later for a
+// sale that was booked earlier, so they are counted on the day they were paid.
+function getReportPayments(filter) {
+  const payments = [];
+  for (const customer of state.customers) {
+    for (const entry of customer.debtHistory || []) {
+      if (entry.type !== 'payment') continue;
+      if (!matchesDateRangeFilter(entry.date, filter)) continue;
+      payments.push({
+        customer,
+        amount: Number(entry.amount || 0),
+        date: entry.date,
+        saleId: entry.saleId,
+        returnSaleId: entry.returnSaleId || null
+      });
+    }
+  }
+  return payments;
+}
+
+function summariseReport(rows) {
+  const filter = getReportFilter();
+  const totalFor = (type) => rows.filter((row) => row.type === type).reduce((sum, row) => sum + row.amount, 0);
+  const unitsFor = (type) => rows.filter((row) => row.type === type).reduce((sum, row) => sum + row.units, 0);
+
+  // Cash in has exactly two sources, and they must not overlap. A cash sale
+  // writes no ledger entry, so it is counted from the invoice. Everything else --
+  // a deposit on a credit sale, a debt settled weeks later -- is a ledger entry
+  // dated when the money actually arrived, and is counted there.
+  const saleCash = rows
+    .filter((row) => row.type === 'sale' && row.sale?.paymentMethod === 'cash')
+    .reduce((sum, row) => sum + row.amount, 0);
+  // A credit written off by a return looks like a payment in the ledger but no
+  // money changed hands, so it is excluded.
+  const debtPaid = getReportPayments(filter)
+    .filter((payment) => !payment.returnSaleId)
+    .reduce((sum, payment) => sum + payment.amount, 0);
+
+  // Cash out: bought stock, paid expenses, and the part of a refund that left the
+  // drawer rather than being written off a customer's debt.
+  const refundCash = rows
+    .filter((row) => row.type === 'return')
+    .reduce((sum, row) => sum + Number(row.sale?.cashRefund || 0), 0);
+
+  const cashIn = saleCash + debtPaid;
+  const cashOut = totalFor('purchase') + totalFor('expense') + refundCash;
+
+  return {
+    cashIn,
+    cashOut,
+    net: cashIn - cashOut,
+    salesValue: totalFor('sale'),
+    purchaseValue: totalFor('purchase'),
+    returnValue: totalFor('return'),
+    wasteValue: totalFor('waste'),
+    expenseValue: totalFor('expense'),
+    unitsSold: unitsFor('sale'),
+    unitsBought: unitsFor('purchase'),
+    unitsReturned: unitsFor('return'),
+    unitsWasted: unitsFor('waste'),
+    unitsAdjusted: unitsFor('adjustment'),
+    count: rows.length
+  };
+}
+
+function reportPeriodLabel() {
+  const filter = getReportFilter();
+  if (filter.mode === 'day') {
+    return new Date(`${filter.start}T12:00:00`).toLocaleDateString('fr-FR', {
+      weekday: 'long', day: 'numeric', month: 'long', year: 'numeric'
+    });
+  }
+  return getDateFilterSummary(filter);
+}
+
+function reportTiles(summary) {
+  const money = [
+    ['Encaissé', formatMoney(summary.cashIn), 'Ventes réglées et dettes payées'],
+    ['Décaissé', formatMoney(summary.cashOut), 'Achats, dépenses et remboursements'],
+    ['Solde net', formatMoney(summary.net), summary.net >= 0 ? 'Excédent sur la période' : 'Déficit sur la période'],
+    ['Valeur des pertes', formatMoney(summary.wasteValue), `${summary.unitsWasted} article${summary.unitsWasted === 1 ? '' : 's'} retiré${summary.unitsWasted === 1 ? '' : 's'}`]
+  ];
+  const stock = [
+    ['Vendus', summary.unitsSold, formatMoney(summary.salesValue)],
+    ['Achetés', summary.unitsBought, formatMoney(summary.purchaseValue)],
+    ['Retournés', summary.unitsReturned, formatMoney(summary.returnValue)],
+    ['Perdus', summary.unitsWasted, formatMoney(summary.wasteValue)],
+    ['Ajustés', summary.unitsAdjusted, 'Corrections manuelles']
+  ];
+
+  return `
+    <div class="report-tiles">
+      ${money.map(([label, value, hint]) => `
+        <div class="report-tile">
+          <span class="report-tile-label">${label}</span>
+          <strong class="report-tile-value">${value}</strong>
+          <small>${hint}</small>
+        </div>`).join('')}
+    </div>
+
+    <div class="report-tiles report-tiles-stock">
+      ${stock.map(([label, units, hint]) => `
+        <div class="report-tile report-tile-compact">
+          <span class="report-tile-label">${label}</span>
+          <strong class="report-tile-value">${units}</strong>
+          <small>${hint}</small>
+        </div>`).join('')}
+    </div>`;
+}
+
+function reportTable(rows) {
+  if (!rows.length) {
+    return '<div class="card"><p class="report-empty">Aucun mouvement sur cette période.</p></div>';
+  }
+
+  return `
+    <div class="card">
+      <div class="table-wrap report-table-wrap">
+        <table class="report-table">
+          <thead>
+            <tr>
+              <th>Date</th><th>Type</th><th>Détail</th>
+              <th class="report-num">Articles</th><th class="report-num">Montant</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rows.map((row) => {
+    const meta = REPORT_TYPES[row.type];
+    const when = new Date(row.at);
+    const stamp = row.type === 'expense'
+      ? when.toLocaleDateString('fr-FR')
+      : `${when.toLocaleDateString('fr-FR')} ${when.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}`;
+    return `
+              <tr>
+                <td>${stamp}</td>
+                <td><span class="mini-pill report-pill-${meta.chip}">${meta.label}</span></td>
+                <td>${escapeHtml(row.party)}${row.detail ? `<small class="report-detail">${escapeHtml(row.detail)}</small>` : ''}</td>
+                <td class="report-num">${row.units || '—'}</td>
+                <td class="report-num">${formatMoney(row.amount)}</td>
+              </tr>`;
+  }).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>`;
+}
+
+function renderReports() {
+  const container = document.getElementById('report-view');
+  if (!container) return;
+
+  const rows = getReportRows();
+  const summary = summariseReport(rows);
+
+  container.innerHTML = `
+    <p class="report-period">${escapeHtml(reportPeriodLabel())} · ${summary.count} mouvement${summary.count === 1 ? '' : 's'}</p>
+    ${reportTiles(summary)}
+    ${reportTable(rows)}`;
+}
+
+function setReportMode(mode) {
+  const next = mode === 'range' ? 'range' : 'day';
+  if (next === reportFilters.mode) return;
+  reportFilters.mode = next;
+
+  document.querySelectorAll('[data-report-mode]').forEach((button) => {
+    const active = button.dataset.reportMode === next;
+    button.classList.toggle('active', active);
+    button.setAttribute('aria-pressed', String(active));
+  });
+  document.getElementById('report-day-field')?.classList.toggle('hidden', next !== 'day');
+  document.getElementById('report-start-field')?.classList.toggle('hidden', next !== 'range');
+  document.getElementById('report-end-field')?.classList.toggle('hidden', next !== 'range');
+  renderReports();
+}
+
+function setReportCategory(category) {
+  reportFilters.category = REPORT_CATEGORIES[category] ? category : 'all';
+  document.querySelectorAll('[data-report-category]').forEach((button) => {
+    const active = button.dataset.reportCategory === reportFilters.category;
+    button.classList.toggle('active', active);
+    button.setAttribute('aria-pressed', String(active));
+  });
+  renderReports();
+}
+
+// The printable sheet's markup: the same letterhead as the invoice, the period
+// it covers, the totals and the movements behind them.
+function buildReportSheet() {
+  const rows = getReportRows();
+  const summary = summariseReport(rows);
+  const categoryLabel = document.querySelector(`[data-report-category="${reportFilters.category}"]`)?.textContent || 'Tout';
+
+  const lines = [
+    ['Encaissé', formatMoney(summary.cashIn)],
+    ['Décaissé', formatMoney(summary.cashOut)],
+    ['Solde net', formatMoney(summary.net)],
+    ['Ventes', `${summary.unitsSold} art. · ${formatMoney(summary.salesValue)}`],
+    ['Achats', `${summary.unitsBought} art. · ${formatMoney(summary.purchaseValue)}`],
+    ['Retours', `${summary.unitsReturned} art. · ${formatMoney(summary.returnValue)}`],
+    ['Pertes', `${summary.unitsWasted} art. · ${formatMoney(summary.wasteValue)}`],
+    ['Dépenses', formatMoney(summary.expenseValue)]
+  ];
+
+  return `
+    <div class="invoice-document report-document">
+      <p class="inv-legal-line">
+        <strong>${escapeHtml(INVOICE_BUSINESS.legalName)}</strong>
+        <span>${escapeHtml(INVOICE_BUSINESS.poBox)}</span>
+        <span>TÉL. : ${escapeHtml(state.settings?.storePhone || INVOICE_BUSINESS.phone)}</span>
+        <span>${escapeHtml(INVOICE_BUSINESS.city)} ${escapeHtml(INVOICE_BUSINESS.country)}</span>
+      </p>
+
+      <header class="report-print-head">
+        <div>
+          <p class="eyebrow">Rapport interne</p>
+          <h2>Mouvements de la période</h2>
+        </div>
+        <div class="report-print-meta">
+          <div><span>PÉRIODE</span><strong>${escapeHtml(reportPeriodLabel())}</strong></div>
+          <div><span>CATÉGORIE</span><strong>${escapeHtml(categoryLabel)}</strong></div>
+          <div><span>ÉDITÉ LE</span><strong>${new Date().toLocaleDateString('fr-FR')}</strong></div>
+        </div>
+      </header>
+
+      <div class="report-print-summary">
+        ${lines.map(([label, value]) => `<div><span>${label}</span><strong>${value}</strong></div>`).join('')}
+      </div>
+
+      ${reportTable(rows)}
+
+      <footer class="inv-strapline">
+        <span class="inv-strapline-mark" aria-hidden="true"></span>
+        <span>${escapeHtml(INVOICE_BUSINESS.strapline)}</span>
+      </footer>
+    </div>`;
+}
+
+// Hands the sheet to the browser's print dialogue, the same route the invoice
+// takes; "Enregistrer au format PDF" in that dialogue is the export.
+function exportReportPdf() {
+  const sheet = document.getElementById('report-print-sheet');
+  if (!sheet) return;
+
+  sheet.innerHTML = buildReportSheet();
+  sheet.classList.add('is-printing');
+
+  // Torn down on afterprint rather than straight after print(), because print()
+  // does not block everywhere. The timer is the fallback for the browsers that
+  // never fire the event, so the sheet cannot be left on screen either way.
+  let done = false;
+  const cleanup = () => {
+    if (done) return;
+    done = true;
+    window.removeEventListener('afterprint', cleanup);
+    sheet.classList.remove('is-printing');
+    sheet.innerHTML = '';
+  };
+  window.addEventListener('afterprint', cleanup);
+  setTimeout(cleanup, 3000);
+
+  window.print();
+}
+
+function setupReportListeners() {
+  const day = document.getElementById('report-day');
+  if (day) {
+    day.value = toDateInputValue(new Date());
+    reportFilters.day = day.value;
+    day.addEventListener('change', (event) => { reportFilters.day = event.target.value; renderReports(); });
+  }
+  document.getElementById('report-start')?.addEventListener('change', (event) => {
+    reportFilters.start = event.target.value;
+    renderReports();
+  });
+  document.getElementById('report-end')?.addEventListener('change', (event) => {
+    reportFilters.end = event.target.value;
+    renderReports();
+  });
+  document.querySelectorAll('[data-report-mode]').forEach((button) => {
+    button.addEventListener('click', () => setReportMode(button.dataset.reportMode));
+  });
+  document.querySelectorAll('[data-report-category]').forEach((button) => {
+    button.addEventListener('click', () => setReportCategory(button.dataset.reportCategory));
+  });
+  document.getElementById('export-report-btn')?.addEventListener('click', exportReportPdf);
 }
 
 // --- Dépenses ---------------------------------------------------------------
@@ -2110,9 +2803,10 @@ async function confirmSaleTransaction() {
 // debts or stock, and nothing outside here reads state.expenses, so the two
 // sides can never affect each other's totals.
 
+// 'Produits gaspillés' used to live here. Waste is a stock movement now -- the
+// Perte mode of the register -- so it is no longer a money-only expense line.
 const EXPENSE_TYPES = [
   'Salaires',
-  'Produits gaspillés',
   'Réparation / Maintenance',
   'Amélioration / Mise à niveau',
   'Autre'
@@ -2379,6 +3073,8 @@ function renderAll() {
   renderDebtRoute();
   renderSalesHistory();
   renderExpenses();
+  renderPurchases();
+  renderReports();
   if (selectedCustomerProfile) {
     showCustomerProfile(selectedCustomerProfile.id);
   }
@@ -2447,6 +3143,8 @@ function setupEventListeners() {
     }
   });
   setupExpenseListeners();
+  setupPurchaseListeners();
+  setupReportListeners();
   renderNav();
 }
 
