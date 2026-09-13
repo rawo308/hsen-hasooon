@@ -191,6 +191,48 @@ function initialize() {
   return initializationPromise;
 }
 
+// Registered ahead of the schema-init middleware below: when the database is
+// unreachable that middleware throws, and health is the one route that has to
+// keep answering precisely then.
+// Says enough to tell a missing environment variable from an unreachable server,
+// which is the difference between a dashboard problem and a database problem.
+// The host is named; the credentials never are.
+function databaseTarget() {
+  if (!databaseUrl) return null;
+  try {
+    const parsed = new URL(databaseUrl);
+    return `${parsed.hostname}:${parsed.port || 5432}${parsed.pathname}`;
+  } catch {
+    return 'unparseable';
+  }
+}
+
+app.get('/api/health', async (request, response) => {
+  if (!pool) {
+    return response.status(503).json({
+      ok: false,
+      database: 'not-configured',
+      reason: !databaseUrl
+        ? 'DATABASE_URL is not set in this environment.'
+        : 'DATABASE_URL is still the example placeholder.',
+      target: databaseTarget()
+    });
+  }
+
+  try {
+    await pool.query('SELECT 1');
+    return response.json({ ok: true, database: 'connected', target: databaseTarget() });
+  } catch (error) {
+    console.error('Database health check failed:', error.message);
+    return response.status(503).json({
+      ok: false,
+      database: 'unavailable',
+      reason: error.message,
+      target: databaseTarget()
+    });
+  }
+});
+
 app.use('/api', async (request, response, next) => {
   try {
     await initialize();
@@ -459,18 +501,6 @@ async function readSettings(client) {
 }
 
 // --- health & hydration ----------------------------------------------------
-
-app.get('/api/health', async (request, response) => {
-  if (!pool) return response.status(503).json({ ok: false, database: 'not-configured' });
-
-  try {
-    await pool.query('SELECT 1');
-    return response.json({ ok: true, database: 'connected' });
-  } catch (error) {
-    console.error('Database health check failed:', error.message);
-    return response.status(503).json({ ok: false, database: 'unavailable' });
-  }
-});
 
 // The one read the app makes on load: everything it renders, in a single round
 // trip. Every mutation below returns just the records it touched.

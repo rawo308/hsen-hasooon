@@ -1024,6 +1024,20 @@ function beginEditCustomer(customerId) {
   document.getElementById('cancel-customer-edit').classList.remove('hidden');
 }
 
+async function deleteCustomer(customer) {
+  if (Number(customer.balance) > 0) {
+    window.alert(`${customer.name} doit encore ${formatMoney(customer.balance)}. Réglez la dette avant de supprimer la fiche.`);
+    return;
+  }
+  if (!window.confirm(`Supprimer la fiche de ${customer.name} ? Ses ventes passées sont conservées.`)) return;
+
+  const saved = await mutate(`/customers/${customer.id}`, 'DELETE', null, () => {
+    state.customers = state.customers.filter((entry) => entry.id !== customer.id);
+  });
+  if (saved === null) return;
+  navigateClient('/clients');
+}
+
 function cancelCustomerEdit() {
   editingCustomerId = null;
   document.getElementById('customer-form').reset();
@@ -1374,9 +1388,15 @@ function renderClientProfilePage(container, customer) {
 
   container.innerHTML = `
     <div class="ledger-page">
-      <div class="ledger-page-header"><button type="button" class="ledger-back-btn" data-client-back>← Clients</button></div>
+      <div class="ledger-page-header">
+        <button type="button" class="ledger-back-btn" data-client-back>← Clients</button>
+        <div class="ledger-page-actions">
+          <button type="button" class="secondary-btn compact-btn" data-edit-client>Modifier</button>
+          <button type="button" class="link-btn danger-link" data-delete-client>Supprimer</button>
+        </div>
+      </div>
       <div class="ledger-entity-header">
-        <div><p class="section-kicker">Profil client</p><h3>${customer.name}</h3><span class="subtle">${customer.phone}</span></div>
+        <div><p class="section-kicker">Profil client</p><h3>${escapeHtml(customer.name)}</h3><span class="subtle">${escapeHtml(customer.phone)}${customer.address ? ` · ${escapeHtml(customer.address)}` : ''}</span></div>
         <div class="ledger-entity-stats">
           <div class="customer-summary-card">
             <div class="customer-summary-header">
@@ -1406,6 +1426,8 @@ function renderClientProfilePage(container, customer) {
   `;
 
   container.querySelector('[data-client-back]')?.addEventListener('click', () => navigateClient('/clients'));
+  container.querySelector('[data-edit-client]')?.addEventListener('click', () => beginEditCustomer(customer.id));
+  container.querySelector('[data-delete-client]')?.addEventListener('click', () => deleteCustomer(customer));
   container.querySelector('[data-purchase-summary-toggle]')?.addEventListener('click', () => {
     container.querySelector('[data-purchase-summary-picker]')?.classList.toggle('hidden');
   });
@@ -2115,6 +2137,53 @@ function renderPurchaseCart() {
   document.getElementById('purchase-total-value').textContent = formatMoney(getPurchaseTotal());
 }
 
+async function createProductFromPurchase() {
+  const nameField = document.getElementById('new-purchase-product-name');
+  const priceField = document.getElementById('new-purchase-product-price');
+  const name = nameField.value.trim();
+  const sellingPrice = Number(priceField.value);
+
+  if (!name) {
+    showMessage('purchase-message', 'Le nom du produit est obligatoire.', 'error');
+    return;
+  }
+  if (!Number.isFinite(sellingPrice) || sellingPrice < 0) {
+    showMessage('purchase-message', 'Indiquez le prix de vente du produit.', 'error');
+    return;
+  }
+
+  // The catalogue is uniquely named server-side, but mutate() reports failures on
+  // the global save indicator rather than here, so a refusal would leave the last
+  // success message sitting under the form. Caught here, next to the field.
+  const clash = state.products.find((product) =>
+    product.name.trim().toLowerCase() === name.toLowerCase());
+  if (clash) {
+    showMessage('purchase-message', `« ${clash.name} » existe déjà dans le catalogue. Ajoutez-le depuis la liste.`, 'error');
+    return;
+  }
+
+  // Created with no stock: the units arrive through this purchase, so that the
+  // delivery is what puts them on the shelf and is recorded as having done so.
+  showMessage('purchase-message', '', 'info');
+  const saved = await mutate('/products', 'POST', {
+    name,
+    sellingPrice,
+    stock: 0,
+    lowStockThreshold: 10,
+    description: ''
+  });
+  if (saved === null) {
+    showMessage('purchase-message', 'Le produit n’a pas pu être créé. Vérifiez le nom et réessayez.', 'error');
+    return;
+  }
+
+  nameField.value = '';
+  priceField.value = '';
+  document.getElementById('new-purchase-product-fields').classList.add('hidden');
+  addToPurchase(saved.product.id);
+  showMessage('purchase-message', `${saved.product.name} a été créé et ajouté à l’achat.`, 'success');
+}
+
 function renderPurchases() {
   renderPurchaseProducts();
   renderPurchaseCart();
@@ -2175,6 +2244,12 @@ function setStockScope(scope) {
 }
 
 function setupPurchaseListeners() {
+  document.getElementById('toggle-new-purchase-product-btn')?.addEventListener('click', () => {
+    const fields = document.getElementById('new-purchase-product-fields');
+    fields.classList.toggle('hidden');
+    if (!fields.classList.contains('hidden')) document.getElementById('new-purchase-product-name').focus();
+  });
+  document.getElementById('create-product-from-purchase')?.addEventListener('click', createProductFromPurchase);
   document.querySelectorAll('[data-stock-scope]').forEach((button) => {
     button.addEventListener('click', () => setStockScope(button.dataset.stockScope));
   });

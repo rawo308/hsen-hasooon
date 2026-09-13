@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="google" content="notranslate" />
     <title>H.H Fruit &ndash; Gestion des stocks et des ventes</title>
-    <link rel="stylesheet" href="/styles.css?v=36" />
+    <link rel="stylesheet" href="/styles.css?v=38" />
   </head>
   <body>
     <div class="app-shell">
@@ -247,6 +247,16 @@
                 </div>
               </div>
               <input id="purchase-product-search" type="search" placeholder="Rechercher un produit" autocomplete="off" />
+
+              <div class="new-product-toggle-row">
+                <button type="button" id="toggle-new-purchase-product-btn" class="link-btn">+ Nouveau produit</button>
+              </div>
+              <div id="new-purchase-product-fields" class="new-customer-fields hidden">
+                <input id="new-purchase-product-name" type="text" placeholder="Nom du produit (ex. BANANE 20KG)" />
+                <input id="new-purchase-product-price" type="number" min="0" step="0.01" placeholder="Prix de vente (F CFA)" />
+                <button type="button" id="create-product-from-purchase" class="secondary-btn">Créer et ajouter</button>
+              </div>
+
               <div id="purchase-product-list" class="catalog-list" translate="no"></div>
             </div>
 
@@ -491,6 +501,6 @@
       </form>
     </div>
 
-    <script src="/app.js?v=36"></script>
+    <script src="/app.js?v=38"></script>
   </body>
 </html>

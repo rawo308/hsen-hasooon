@@ -4716,3 +4716,14 @@ tr:focus-within > .row-actions .link-btn {
   background: #eceff1;
   color: #4a5b63;
 }
+
+.ledger-page-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-left: auto;
+}
+
+.new-product-toggle-row {
+  margin: 10px 0 0;
+}
