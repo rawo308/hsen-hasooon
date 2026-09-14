@@ -305,56 +305,69 @@
         </div>
 
         <div id="stock-purchases" class="stock-view hidden">
-          <div class="pos-layout">
-            <div class="card product-area">
-              <div class="card-header">
-                <div>
-                  <p class="eyebrow">Catalogue</p>
-                  <h3>Produits</h3>
-                </div>
-              </div>
-              <input id="purchase-product-search" type="search" placeholder="Rechercher un produit"
-                autocomplete="off" />
-
-              <div class="new-product-toggle-row">
-                <button type="button" id="toggle-new-purchase-product-btn" class="link-btn">+ Nouveau produit</button>
-              </div>
-              <div id="new-purchase-product-fields" class="new-customer-fields hidden">
-                <input id="new-purchase-product-name" type="text" placeholder="Nom du produit (ex. BANANE 20KG)" />
-                <input id="new-purchase-product-price" type="number" min="0" step="0.01"
-                  placeholder="Prix de vente (F CFA)" />
-                <button type="button" id="create-product-from-purchase" class="secondary-btn">Créer et ajouter</button>
-              </div>
-
-              <div id="purchase-product-list" class="catalog-list" translate="no"></div>
+          <div class="stock-add-section">
+            <div>
+              <p class="eyebrow">Réception</p>
+              <h2>Ajouter au stock</h2>
+              <p class="page-subtitle">Enregistrez les produits reçus et augmentez leur stock.</p>
             </div>
+            <button type="button" id="open-purchase-editor" class="primary-btn">+ Ajouter</button>
+          </div>
 
-            <div class="card cart-area" id="purchase-cart-area">
-              <div class="card-header">
+          <section class="stock-history-section">
+            <div class="stock-history-heading">
+              <div>
+                <p class="eyebrow">Mouvements de stock</p>
+                <h3>Historique des achats</h3>
+              </div>
+              <span id="purchase-history-count" class="subtle"></span>
+            </div>
+            <div class="stock-history-controls">
+              <div id="purchase-date-filter" class="shared-date-filter"></div>
+              <label class="purchase-history-product-filter"><span>Produit</span><select id="purchase-history-product">
+                  <option value="all">Tous</option>
+                </select></label>
+            </div>
+            <div id="purchase-history-list" class="purchase-history-list" aria-live="polite"></div>
+          </section>
+
+          <div id="purchase-editor-modal" class="modal product-editor-modal hidden" role="dialog" aria-modal="true"
+            aria-labelledby="purchase-editor-title">
+            <div class="modal-content product-editor-panel purchase-editor-panel">
+              <div class="products-section-heading editor-modal-heading">
                 <div>
-                  <p class="eyebrow">Réception</p>
-                  <h3>Achat en cours</h3>
+                  <p class="section-kicker">Stock</p>
+                  <h3 id="purchase-editor-title">Ajouter au stock</h3>
                 </div>
-                <span id="purchase-count" class="cart-count">0 article</span>
+                <button type="button" id="close-purchase-editor" class="icon-btn" aria-label="Fermer"
+                  title="Fermer">&times;</button>
               </div>
-
-              <div id="purchase-cart-items" class="cart-items"></div>
-
-              <div class="totals-box">
-                <div class="total-row grand-total"><span>Total de l’achat</span><strong id="purchase-total-value">0 F
+              <div class="purchase-editor-body">
+                <div class="purchase-selector-block">
+                  <label><span>Produit</span><input id="purchase-product-search" type="search"
+                      placeholder="Rechercher un produit..." autocomplete="off" /></label>
+                  <div id="purchase-product-list" class="purchase-product-options" translate="no"></div>
+                </div>
+                <div id="purchase-cart-items" class="purchase-editor-line"></div>
+                <button type="button" id="toggle-new-purchase-product-btn" class="link-btn">+ Nouveau produit</button>
+                <div class="purchase-editor-fields">
+                  <label><span>Fournisseur <small>(facultatif)</small></span><input id="purchase-supplier" type="text"
+                      placeholder="ex. Marché de gros" autocomplete="off" /></label>
+                  <label><span>Date</span><input id="purchase-date" type="date" required /></label>
+                </div>
+                <div id="new-purchase-product-fields" class="new-customer-fields hidden">
+                  <input id="new-purchase-product-name" type="text" placeholder="Nom du nouveau produit" />
+                  <input id="new-purchase-product-price" type="number" min="0" step="0.01"
+                    placeholder="Prix de vente (F CFA)" />
+                  <button type="button" id="create-product-from-purchase" class="secondary-btn">Créer et
+                    ajouter</button>
+                </div>
+                <div class="purchase-editor-total"><span>Total de l’achat</span><strong id="purchase-total-value">0 F
                     CFA</strong></div>
-              </div>
-
-              <div class="sale-form">
-                <div class="form-section-title">Fournisseur</div>
-                <label class="field-wide">
-                  <span>Nom du fournisseur <span class="subtle">(facultatif)</span></span>
-                  <input id="purchase-supplier" type="text" placeholder="ex. Marché de gros" autocomplete="off" />
-                </label>
-                <p class="pos-return-note">Le stock sera augmenté des quantités reçues. Le prix saisi est le prix
-                  d’achat, pas le prix de vente.</p>
-                <button id="complete-purchase-btn" class="primary-btn">Enregistrer l’achat</button>
                 <div id="purchase-message" class="message-box"></div>
+                <div class="modal-actions-row"><button type="button" id="cancel-purchase-editor"
+                    class="secondary-btn">Annuler</button><button id="complete-purchase-btn"
+                    class="primary-btn">Enregistrer</button></div>
               </div>
             </div>
           </div>

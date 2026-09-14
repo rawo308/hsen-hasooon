@@ -339,10 +339,15 @@ const sharedDatePickerState = {};
 
 function sharedDateFilterMarkup(id) {
   return `
-    <div class="shared-date-quick" role="group" aria-label="Filtre de date">
-      <button type="button" data-date-quick="today">Aujourd'hui</button>
-      <button type="button" data-date-quick="week">Cette semaine</button>
-      <button type="button" data-date-quick="month">Ce mois</button>
+    <div class="shared-date-control" role="group" aria-label="Filtre de date">
+      <div class="shared-date-select">
+        <button type="button" class="shared-date-select-trigger" data-date-select aria-haspopup="listbox" aria-expanded="false">Aujourd'hui <span aria-hidden="true">▾</span></button>
+        <div class="shared-date-select-menu hidden" data-date-menu role="listbox">
+          <button type="button" data-date-quick="today" role="option">Aujourd'hui</button>
+          <button type="button" data-date-quick="week" role="option">Cette semaine</button>
+          <button type="button" data-date-quick="month" role="option">Ce mois</button>
+        </div>
+      </div>
       <button type="button" class="calendar-icon-btn" data-date-calendar aria-label="Ouvrir le calendrier">📅</button>
     </div>
     <div class="shared-date-popover hidden" data-date-popover>
@@ -365,11 +370,11 @@ function sharedDateLabel(value) {
 function sharedDatePreset(kind) {
   const today = new Date();
   const end = sharedDateKey(today);
-  if (kind === 'today') return { mode: 'day', start: end, end };
-  if (kind === 'month') return { mode: 'range', start: sharedDateKey(new Date(today.getFullYear(), today.getMonth(), 1)), end };
+  if (kind === 'today') return { mode: 'day', start: end, end, preset: 'Aujourd\'hui' };
+  if (kind === 'month') return { mode: 'range', start: sharedDateKey(new Date(today.getFullYear(), today.getMonth(), 1)), end, preset: 'Ce mois' };
   const day = (today.getDay() + 6) % 7;
   const startDate = new Date(today.getFullYear(), today.getMonth(), today.getDate() - day);
-  return { mode: 'range', start: sharedDateKey(startDate), end };
+  return { mode: 'range', start: sharedDateKey(startDate), end, preset: 'Cette semaine' };
 }
 
 function renderSharedDateCalendar(root, id) {
@@ -400,9 +405,25 @@ function setupSharedDateFilter(root, id, initialFilter, onApply) {
   sharedDatePickerState[id] = { start: initial.start || '', end: initial.end || '', month };
   const picker = sharedDatePickerState[id];
   const popover = root.querySelector('[data-date-popover]');
+  const selectTrigger = root.querySelector('[data-date-select]');
+  const menu = root.querySelector('[data-date-menu]');
   const open = () => { popover.classList.remove('hidden'); renderSharedDateCalendar(root, id); };
+  const selectedLabel = initialFilter?.preset || (initialFilter?.mode === 'range' && initialFilter.start && initialFilter.end
+    ? (initialFilter.start === initialFilter.end ? "Aujourd'hui" : 'Période')
+    : initialFilter?.mode === 'all' ? "Aujourd'hui" : "Aujourd'hui");
+  const setSelectedLabel = (label) => { selectTrigger.firstChild.textContent = `${label} `; };
+  setSelectedLabel(selectedLabel);
+  selectTrigger.addEventListener('click', () => {
+    const expanded = menu.classList.toggle('hidden');
+    selectTrigger.setAttribute('aria-expanded', String(!expanded));
+  });
   root.querySelector('[data-date-calendar]').addEventListener('click', open);
-  root.querySelectorAll('[data-date-quick]').forEach((button) => button.addEventListener('click', () => onApply(sharedDatePreset(button.dataset.dateQuick))));
+  root.querySelectorAll('[data-date-quick]').forEach((button) => button.addEventListener('click', () => {
+    menu.classList.add('hidden');
+    selectTrigger.setAttribute('aria-expanded', 'false');
+    setSelectedLabel(button.textContent.trim());
+    onApply(sharedDatePreset(button.dataset.dateQuick));
+  }));
   root.querySelector('[data-date-prev]').addEventListener('click', () => { const date = new Date(`${picker.month}-01T12:00:00`); date.setMonth(date.getMonth() - 1); picker.month = sharedDateKey(date).slice(0, 7); renderSharedDateCalendar(root, id); });
   root.querySelector('[data-date-next]').addEventListener('click', () => { const date = new Date(`${picker.month}-01T12:00:00`); date.setMonth(date.getMonth() + 1); picker.month = sharedDateKey(date).slice(0, 7); renderSharedDateCalendar(root, id); });
   root.querySelector('[data-date-grid]').addEventListener('click', (event) => {
@@ -416,11 +437,12 @@ function setupSharedDateFilter(root, id, initialFilter, onApply) {
   });
   root.querySelector('[data-date-apply]').addEventListener('click', () => {
     if (!picker.start) return;
-    onApply({ mode: getDateFilterMode(picker.start, picker.end), start: picker.start, end: picker.end || picker.start });
+    setSelectedLabel(picker.end && picker.end !== picker.start ? 'Période' : "Aujourd'hui");
+    onApply({ mode: getDateFilterMode(picker.start, picker.end), start: picker.start, end: picker.end || picker.start, preset: '' });
     popover.classList.add('hidden');
   });
   root.querySelector('[data-date-clear]').addEventListener('click', () => {
-    picker.start = ''; picker.end = ''; onApply({ mode: 'all', start: '', end: '' }); popover.classList.add('hidden');
+    picker.start = ''; picker.end = ''; setSelectedLabel("Aujourd'hui"); onApply({ mode: 'all', start: '', end: '', preset: '' }); popover.classList.add('hidden');
   });
 }
 
@@ -2429,6 +2451,7 @@ async function confirmSaleTransaction() {
 
 let purchaseCart = [];
 let isSavingPurchase = false;
+let purchaseHistoryFilters = { mode: 'all', start: '', end: '', productId: 'all' };
 
 function getPurchaseTotal() {
   return purchaseCart.reduce((total, item) => total + item.quantity * item.unitPrice, 0);
@@ -2581,6 +2604,58 @@ async function createProductFromPurchase() {
 function renderPurchases() {
   renderPurchaseProducts();
   renderPurchaseCart();
+  const historyProduct = document.getElementById('purchase-history-product');
+  if (historyProduct) {
+    const selectedProduct = purchaseHistoryFilters.productId || 'all';
+    historyProduct.innerHTML = '<option value="all">Tous</option>' + state.products.map((product) => `<option value="${product.id}">${escapeHtml(product.name)}</option>`).join('');
+    historyProduct.value = selectedProduct;
+  }
+  renderPurchaseHistory();
+}
+
+function getPurchaseHistoryRows() {
+  return state.sales
+    .filter((sale) => getTransactionType(sale) === 'purchase')
+    .filter((sale) => matchesDateRangeFilter(sale.createdAt, purchaseHistoryFilters))
+    .filter((sale) => purchaseHistoryFilters.productId === 'all' || sale.items?.some((item) => item.productId === purchaseHistoryFilters.productId))
+    .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+}
+
+function renderPurchaseHistory() {
+  const list = document.getElementById('purchase-history-list');
+  if (!list) return;
+  const rows = getPurchaseHistoryRows();
+  const count = document.getElementById('purchase-history-count');
+  if (count) count.textContent = plural(rows.length, 'achat');
+  list.innerHTML = rows.length ? rows.map((sale) => {
+    const units = sale.items.reduce((sum, item) => sum + Number(item.quantity || 0), 0);
+    const total = Number(sale.totalAmount || 0);
+    const products = sale.items.map((item) => `${escapeHtml(item.productName)} · ${item.quantity}`).join('<br>');
+    return `<article class="purchase-history-row">
+      <div class="purchase-history-date"><span>Date</span><strong>${new Date(sale.createdAt).toLocaleDateString('fr-FR')}</strong></div>
+      <div class="purchase-history-product"><span>Produit</span><strong>${products}</strong></div>
+      <div class="purchase-history-quantity"><span>Quantité ajoutée</span><strong>${units}</strong><small>article${units > 1 ? 's' : ''}</small></div>
+      <div class="purchase-history-total"><span>Total achat</span><strong>${formatMoney(total)}</strong></div>
+      <div class="purchase-history-supplier"><span>Fournisseur</span><strong>${escapeHtml(sale.supplier || 'Non précisé')}</strong></div>
+    </article>`;
+  }).join('') : '<div class="empty-state-block"><strong>Aucun achat enregistré</strong><p>Les ajouts au stock apparaîtront ici.</p></div>';
+}
+
+function openPurchaseEditor() {
+  purchaseCart = [];
+  document.getElementById('purchase-product-search').value = '';
+  document.getElementById('purchase-supplier').value = '';
+  document.getElementById('purchase-date').value = toDateInputValue(new Date());
+  showMessage('purchase-message', '', '');
+  renderPurchaseProducts();
+  renderPurchaseCart();
+  document.getElementById('purchase-editor-modal').classList.remove('hidden');
+  document.getElementById('purchase-product-search').focus();
+}
+
+function closePurchaseEditor() {
+  purchaseCart = [];
+  document.getElementById('purchase-editor-modal')?.classList.add('hidden');
 }
 
 async function completePurchase() {
@@ -2600,6 +2675,7 @@ async function completePurchase() {
     const saved = await mutate('/sales', 'POST', {
       type: 'purchase',
       supplier: document.getElementById('purchase-supplier')?.value?.trim() || '',
+      date: document.getElementById('purchase-date')?.value || '',
       items: purchaseCart.map((item) => ({
         productId: item.productId,
         quantity: item.quantity,
@@ -2612,6 +2688,7 @@ async function completePurchase() {
     const supplierField = document.getElementById('purchase-supplier');
     if (supplierField) supplierField.value = '';
     renderPurchases();
+    closePurchaseEditor();
     showMessage(
       'purchase-message',
       `Achat enregistré : ${formatMoney(saved.sale.totalAmount)}. Le stock a été mis à jour.`,
@@ -2647,6 +2724,24 @@ function setStockScope(scope) {
 }
 
 function setupPurchaseListeners() {
+  setupSharedDateFilter(document.getElementById('purchase-date-filter'), 'purchases', purchaseHistoryFilters, (filter) => {
+    purchaseHistoryFilters = { ...purchaseHistoryFilters, ...filter };
+    renderPurchaseHistory();
+  });
+  const historyProduct = document.getElementById('purchase-history-product');
+  if (historyProduct) {
+    historyProduct.innerHTML = '<option value="all">Tous</option>' + state.products.map((product) => `<option value="${product.id}">${escapeHtml(product.name)}</option>`).join('');
+    historyProduct.addEventListener('change', (event) => {
+      purchaseHistoryFilters.productId = event.target.value;
+      renderPurchaseHistory();
+    });
+  }
+  document.getElementById('open-purchase-editor')?.addEventListener('click', openPurchaseEditor);
+  document.getElementById('close-purchase-editor')?.addEventListener('click', closePurchaseEditor);
+  document.getElementById('cancel-purchase-editor')?.addEventListener('click', closePurchaseEditor);
+  document.getElementById('purchase-editor-modal')?.addEventListener('click', (event) => {
+    if (event.target.id === 'purchase-editor-modal') closePurchaseEditor();
+  });
   document.getElementById('toggle-new-purchase-product-btn')?.addEventListener('click', () => {
     const fields = document.getElementById('new-purchase-product-fields');
     fields.classList.toggle('hidden');

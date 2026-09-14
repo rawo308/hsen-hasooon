@@ -3472,6 +3472,41 @@ textarea {
     padding: 18px 14px;
   }
 
+  .stock-add-section,
+  .stock-history-heading,
+  .stock-history-controls {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .stock-add-section .primary-btn {
+    width: 100%;
+  }
+
+  .purchase-history-product-filter,
+  .purchase-history-product-filter select {
+    width: 100%;
+  }
+
+  .purchase-history-product-filter {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .purchase-history-row {
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    padding: 13px;
+  }
+
+  .purchase-history-product {
+    grid-column: 1 / -1;
+  }
+
+  .purchase-editor-fields {
+    grid-template-columns: 1fr;
+  }
+
   .shared-date-quick {
     width: 100%;
     justify-content: space-between;
@@ -4371,37 +4406,82 @@ body.is-loading .main-panel {
   max-width: 100%;
 }
 
-.shared-date-quick {
+.shared-date-control {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  padding: 4px;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  background: var(--panel-soft);
+  gap: 6px;
 }
 
-.shared-date-quick>button:not(.calendar-icon-btn) {
-  min-height: 32px;
-  padding: 6px 12px;
-  border: 0;
-  border-radius: 999px;
-  background: transparent;
-  color: var(--muted);
-  font-size: 0.76rem;
+.shared-date-select {
+  position: relative;
+}
+
+.shared-date-select-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 142px;
+  min-height: 36px;
+  padding: 7px 11px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--text);
+  font-size: 0.78rem;
   font-weight: 700;
+  text-align: left;
   white-space: nowrap;
 }
 
-.shared-date-quick>button:not(.calendar-icon-btn):hover {
-  background: var(--panel);
-  color: var(--text);
+.shared-date-select-trigger span {
+  margin-left: auto;
+  color: var(--muted);
 }
 
-.shared-date-quick .calendar-icon-btn {
+.shared-date-select-trigger:hover,
+.shared-date-select-trigger[aria-expanded="true"] {
+  border-color: var(--accent-line);
+  background: var(--accent-panel);
+}
+
+.shared-date-select-menu {
+  position: absolute;
+  z-index: 31;
+  top: calc(100% + 6px);
+  left: 0;
+  min-width: 100%;
+  padding: 5px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  box-shadow: var(--shadow);
+}
+
+.shared-date-select-menu button {
+  display: block;
+  width: 100%;
+  padding: 8px 9px;
   border: 0;
-  border-radius: 999px;
-  background: var(--accent-soft);
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text);
+  font-size: 0.78rem;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.shared-date-select-menu button:hover,
+.shared-date-select-menu button:focus-visible {
+  background: var(--accent-panel);
+  outline: none;
+}
+
+.shared-date-control .calendar-icon-btn {
+  width: 36px;
+  height: 36px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
 }
 
 .shared-date-popover {
@@ -5074,4 +5154,169 @@ tr:focus-within>.row-actions .link-btn {
    sliding left and leaving a gap beside it. */
 .inv-closing-no-tax .inv-settlement {
   grid-column: 2;
+}
+
+.stock-add-section,
+.stock-history-section {
+  padding: 22px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.stock-add-section,
+.stock-history-heading,
+.stock-history-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.stock-add-section h2,
+.stock-history-heading h3 {
+  margin: 0;
+}
+
+.stock-add-section .page-subtitle {
+  margin-bottom: 0;
+}
+
+.stock-history-controls {
+  justify-content: flex-start;
+  margin-top: 16px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel-soft);
+}
+
+.purchase-history-product-filter {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 0.76rem;
+  font-weight: 700;
+}
+
+.purchase-history-product-filter select {
+  min-width: 180px;
+  padding: 8px 10px;
+  background: var(--panel);
+}
+
+.purchase-history-list {
+  display: grid;
+  gap: 8px;
+  max-height: min(52vh, 520px);
+  margin-top: 12px;
+  padding-right: 6px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--accent-line) var(--panel-soft);
+}
+
+.purchase-history-row {
+  display: grid;
+  grid-template-columns: minmax(92px, 0.8fr) minmax(180px, 1.5fr) minmax(100px, 0.8fr) minmax(120px, 0.9fr) minmax(150px, 1fr);
+  align-items: center;
+  gap: 18px;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--panel);
+}
+
+.purchase-history-row>div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.purchase-history-row span {
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.purchase-history-product strong {
+  line-height: 1.45;
+}
+
+.purchase-history-quantity strong {
+  color: var(--accent-strong);
+  font-size: 1.05rem;
+}
+
+.purchase-history-quantity small {
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+.purchase-history-total strong {
+  color: var(--text);
+}
+
+.purchase-editor-panel {
+  max-width: 620px;
+}
+
+.purchase-editor-body {
+  display: grid;
+  gap: 14px;
+}
+
+.purchase-selector-block,
+.purchase-editor-line {
+  display: grid;
+  gap: 8px;
+}
+
+.purchase-selector-block>label,
+.purchase-editor-fields label {
+  display: grid;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.purchase-product-options {
+  display: grid;
+  gap: 5px;
+  max-height: 190px;
+  overflow-y: auto;
+}
+
+.purchase-product-options:empty {
+  display: none;
+}
+
+.purchase-product-options .catalog-item {
+  padding: 9px 11px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel-soft);
+}
+
+.purchase-editor-line .cart-row {
+  margin: 0;
+  padding: 12px;
+  border: 1px solid var(--accent-line);
+  border-radius: 9px;
+  background: var(--accent-panel);
+}
+
+.purchase-editor-fields {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.purchase-editor-total {
+  display: flex;
+  justify-content: space-between;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
 }

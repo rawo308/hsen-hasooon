@@ -809,9 +809,9 @@ app.post('/api/sales', requireAuth, requireDatabase, route(async (request, respo
   const body = request.body || {};
   const type = Object.prototype.hasOwnProperty.call(TRANSACTION_TYPES, body.type) ? body.type : 'sale';
   const rules = TRANSACTION_TYPES[type];
-  const saleDate = type === 'waste' && typeof body.date === 'string' && body.date.trim() ? body.date.trim() : null;
-  if (type === 'waste' && saleDate && !/^\d{4}-\d{2}-\d{2}$/.test(saleDate)) {
-    throw new RequestError(400, 'La date de la perte est invalide.');
+  const saleDate = (type === 'waste' || type === 'purchase') && typeof body.date === 'string' && body.date.trim() ? body.date.trim() : null;
+  if ((type === 'waste' || type === 'purchase') && saleDate && !/^\d{4}-\d{2}-\d{2}$/.test(saleDate)) {
+    throw new RequestError(400, `La date de l${type === 'purchase' ? '’achat' : 'a perte'} est invalide.`);
   }
   const note = type === 'waste' ? optionalText(body.note, { max: 500 }) : '';
   // A supplier delivery and a write-off have no customer, whatever was sent.
@@ -864,7 +864,7 @@ app.post('/api/sales', requireAuth, requireDatabase, route(async (request, respo
     }
 
     const saleId = newId(rules.idPrefix);
-    const createdAt = type === 'waste' && saleDate ? new Date(`${saleDate}T12:00:00`) : new Date();
+    const createdAt = (type === 'waste' || type === 'purchase') && saleDate ? new Date(`${saleDate}T12:00:00`) : new Date();
     await client.query(
       `INSERT INTO sales (id, type, created_at, customer_id, payment_method, payment_type,
                           total_amount, discount, discount_percent, supplier, reason, note)
