@@ -2704,6 +2704,13 @@ function clearPurchaseHistoryProduct() {
   renderPurchaseHistory();
 }
 
+function closePurchaseHistoryProductOptions() {
+  const options = document.getElementById('purchase-history-product-options');
+  const input = document.getElementById('purchase-history-product-search');
+  options?.classList.add('hidden');
+  input?.setAttribute('aria-expanded', 'false');
+}
+
 async function deletePurchase(purchaseId) {
   if (!window.confirm('Supprimer cet ajout au stock ? Le stock sera restauré.')) return;
   const saved = await mutate(`/sales/${purchaseId}`, 'DELETE');
@@ -2810,6 +2817,10 @@ function setupPurchaseListeners() {
     renderPurchaseHistory();
   });
   document.getElementById('clear-purchase-history-product')?.addEventListener('click', clearPurchaseHistoryProduct);
+  document.addEventListener('click', (event) => {
+    const picker = document.getElementById('purchase-history-product-picker');
+    if (picker && !picker.contains(event.target)) closePurchaseHistoryProductOptions();
+  });
   document.getElementById('clear-purchase-product')?.addEventListener('click', clearPurchaseProduct);
   document.getElementById('open-purchase-editor')?.addEventListener('click', openPurchaseEditor);
   document.getElementById('close-purchase-editor')?.addEventListener('click', closePurchaseEditor);
