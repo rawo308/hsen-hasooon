@@ -29,6 +29,9 @@ let customerPurchaseCustomRange = { start: '', end: '' };
 let customerPurchaseSummaryFilter = { mode: 'all', start: '', end: '' };
 let customerTransactionHistoryFilter = { mode: 'all', start: '', end: '' };
 let saleDiscountPercent = 0;
+let pertesFilters = { mode: 'all', start: '', end: '' };
+let editingPerteId = null;
+let pendingDeletePerteId = null;
 // 'sale' keeps the original checkout untouched; 'return' records an independent
 // Retour transaction that puts stock back.
 let posMode = 'sale';
@@ -336,11 +339,35 @@ function getProductById(productId) {
   return state.products.find((product) => product.id === productId) || null;
 }
 
+function getWasteSales() {
+  return state.sales.filter((sale) => getTransactionType(sale) === 'waste').sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+}
+
+function getWasteRows() {
+  return getWasteSales().filter((sale) => {
+    const item = sale.items?.[0];
+    if (!item) return false;
+    const productMatch = pertesFilters.productId && pertesFilters.productId !== 'all'
+      ? item.productId === pertesFilters.productId
+      : true;
+    const dateMatch = matchesDateRangeFilter(sale.createdAt, pertesFilters);
+    return productMatch && dateMatch;
+  });
+}
+
 // Transactions recorded before returns existed carry no type, so anything that
 // is not explicitly a return is a sale.
 // The five kinds of row in state.sales. Anything unrecognised is read as a sale,
 // which is what a row written before the ledger grew these types would be.
 const TRANSACTION_TYPES = ['sale', 'return', 'purchase', 'waste', 'adjustment', 'adjustment_out'];
+const PERTE_REASONS = [
+  'Produit périmé',
+  'Produit avarié',
+  'Produit endommagé',
+  'Produit cassé',
+  'Perdu',
+  'Autre'
+];
 
 function getTransactionType(transaction) {
   return TRANSACTION_TYPES.includes(transaction?.type) ? transaction.type : 'sale';
@@ -778,10 +805,10 @@ function renderProductsList() {
           </thead>
           <tbody>
             ${productList.map((product) => {
-    const stock = product.stock;
-    const threshold = getLowStockThreshold(product);
-    const stockState = stock === 0 ? 'out' : stock <= threshold ? 'low' : 'healthy';
-    return `
+      const stock = product.stock;
+      const threshold = getLowStockThreshold(product);
+      const stockState = stock === 0 ? 'out' : stock <= threshold ? 'low' : 'healthy';
+      return `
               <tr>
                 <td>
                   <strong>${escapeHtml(product.name)}</strong>
@@ -795,7 +822,7 @@ function renderProductsList() {
                   <button class="link-btn danger-link" data-delete-product="${product.id}">Supprimer</button>
                 </td>
               </tr>`;
-  }).join('')}
+    }).join('')}
           </tbody>
         </table>
       </div>`
@@ -813,6 +840,221 @@ function renderProductsList() {
     button.addEventListener('click', () => deleteProduct(button.dataset.deleteProduct));
   });
   listEl.querySelector('[data-empty-add-product]')?.addEventListener('click', focusProductEditor);
+}
+
+function renderWasteView() {
+  const listEl = document.getElementById('pertes-list');
+  const summaryEl = document.getElementById('pertes-summary');
+  const totalEl = document.getElementById('pertes-total-quantity');
+  const filterSummaryEl = document.getElementById('pertes-filter-summary');
+  const rows = getWasteRows();
+  const totalUnits = rows.reduce((sum, sale) => sum + Number(sale.items?.[0]?.quantity || 0), 0);
+
+  if (summaryEl) summaryEl.textContent = `${plural(rows.length, 'perte')} · ${plural(totalUnits, 'article')} perdu`;
+  if (totalEl) totalEl.textContent = `${totalUnits} article${Math.abs(totalUnits) > 1 ? 's' : ''}`;
+  if (filterSummaryEl) filterSummaryEl.textContent = getDateFilterSummary(pertesFilters);
+
+  if (!listEl) return;
+
+  if (!rows.length) {
+    listEl.innerHTML = `
+      <div class="empty-state-block">
+        <strong>Aucune perte</strong>
+        <p>La liste des pertes enregistrées apparaîtra ici.</p>
+      </div>`;
+    return;
+  }
+
+  listEl.innerHTML = rows.map((sale) => {
+    const item = sale.items?.[0];
+    const product = item ? getProductById(item.productId) : null;
+    const when = new Date(sale.createdAt);
+    return `
+      <button type="button" class="history-row perte-row" data-perte-details="${sale.id}">
+        <span class="history-cell date-cell">${when.toLocaleDateString('fr-FR')}</span>
+        <span class="history-cell product-cell">${escapeHtml(product?.name || item?.productName || 'Produit supprimé')}</span>
+        <span class="history-cell qty-cell"><strong>${Number(item?.quantity || 0)}</strong></span>
+        <span class="history-cell reason-cell">${escapeHtml(sale.reason || 'Autre')}</span>
+        <span class="history-row-actions">
+          <span class="link-btn muted">Voir</span>
+        </span>
+      </button>
+    `;
+  }).join('');
+
+  listEl.querySelectorAll('[data-perte-details]').forEach((button) => {
+    button.addEventListener('click', () => openPerteDetails(button.dataset.perteDetails));
+  });
+}
+
+function updatePerteDateFields() {
+  const panel = document.getElementById('pertes-date-panel');
+  const start = document.getElementById('pertes-date-start');
+  const end = document.getElementById('pertes-date-end');
+  if (!panel) return;
+  const visible = !panel.classList.contains('hidden');
+  if (!visible) {
+    pertesFilters.mode = 'all';
+    pertesFilters.start = '';
+    pertesFilters.end = '';
+    if (start) start.value = '';
+    if (end) end.value = '';
+  }
+  renderWasteView();
+}
+
+function resetPerteFilters() {
+  pertesFilters = { mode: 'all', start: '', end: '', productId: 'all' };
+  const productFilter = document.getElementById('pertes-product-filter');
+  if (productFilter) productFilter.value = 'all';
+  document.getElementById('pertes-date-panel')?.classList.add('hidden');
+  const start = document.getElementById('pertes-date-start');
+  const end = document.getElementById('pertes-date-end');
+  if (start) start.value = '';
+  if (end) end.value = '';
+  renderWasteView();
+}
+
+function openPerteEditor(perteId = null) {
+  const sale = perteId ? getWasteSales().find((entry) => entry.id === perteId) : null;
+  editingPerteId = sale ? sale.id : null;
+  const form = document.getElementById('perte-form');
+  if (!form) return;
+  form.reset();
+  const productSelect = document.getElementById('perte-product');
+  const reasonSelect = document.getElementById('perte-reason');
+  const dateInput = document.getElementById('perte-date');
+  const noteInput = document.getElementById('perte-note');
+  const qtyInput = document.getElementById('perte-quantity');
+  productSelect.innerHTML = '<option value="">Sélectionnez un produit</option>' + state.products.map((product) => `<option value="${product.id}">${escapeHtml(product.name)}</option>`).join('');
+  reasonSelect.innerHTML = PERTE_REASONS.map((reason) => `<option value="${reason}">${reason}</option>`).join('');
+  if (sale) {
+    const item = sale.items?.[0];
+    const productId = item?.productId || '';
+    productSelect.value = productId;
+    qtyInput.value = item?.quantity || 1;
+    reasonSelect.value = sale.reason || 'Autre';
+    dateInput.value = sale.createdAt ? toDateInputValue(new Date(sale.createdAt)) : toDateInputValue(new Date());
+    noteInput.value = sale.note || '';
+    document.getElementById('perte-form-title').textContent = 'Modifier la perte';
+    document.getElementById('perte-submit-btn').textContent = 'Enregistrer';
+  } else {
+    productSelect.value = '';
+    qtyInput.value = 1;
+    reasonSelect.value = 'Produit périmé';
+    dateInput.value = toDateInputValue(new Date());
+    noteInput.value = '';
+    document.getElementById('perte-form-title').textContent = 'Nouvelle perte';
+    document.getElementById('perte-submit-btn').textContent = 'Enregistrer';
+  }
+  document.getElementById('perte-form-message').textContent = '';
+  document.getElementById('perte-editor-modal').classList.remove('hidden');
+  productSelect.focus();
+}
+
+function closePerteEditor() {
+  editingPerteId = null;
+  document.getElementById('perte-form')?.reset();
+  document.getElementById('perte-form-message').textContent = '';
+  document.getElementById('perte-editor-modal')?.classList.add('hidden');
+}
+
+async function handlePerteSubmit(event) {
+  event.preventDefault();
+  const productId = document.getElementById('perte-product').value;
+  const quantity = Number(document.getElementById('perte-quantity').value);
+  const reason = document.getElementById('perte-reason').value;
+  const date = document.getElementById('perte-date').value;
+  const note = document.getElementById('perte-note').value.trim();
+  const product = getProductById(productId);
+  const formMessage = document.getElementById('perte-form-message');
+
+  if (!productId || !product) {
+    formMessage.textContent = 'Sélectionnez un produit existant.';
+    return;
+  }
+  if (!Number.isFinite(quantity) || quantity <= 0) {
+    formMessage.textContent = 'La quantité doit être supérieure à 0.';
+    return;
+  }
+  const existingPerte = editingPerteId ? getWasteSales().find((sale) => sale.id === editingPerteId) : null;
+  const existingItem = existingPerte?.items?.[0];
+  const restoredStock = Number(product.stock || 0)
+    + (existingItem?.productId === productId ? Number(existingItem.quantity || 0) : 0);
+  if (quantity > restoredStock) {
+    formMessage.textContent = `La quantité ne peut pas dépasser le stock disponible (${restoredStock}).`;
+    return;
+  }
+  if (!date) {
+    formMessage.textContent = 'La date est obligatoire.';
+    return;
+  }
+  if (!reason || !PERTE_REASONS.includes(reason)) {
+    formMessage.textContent = 'Sélectionnez un motif valide.';
+    return;
+  }
+
+  const payload = {
+    type: 'waste',
+    productId,
+    reason,
+    date,
+    note,
+    items: [{ productId, quantity }]
+  };
+
+  const saved = editingPerteId
+    ? await mutate(`/sales/${editingPerteId}`, 'PUT', { ...payload, reason, date, note, items: payload.items })
+    : await mutate('/sales', 'POST', payload);
+  if (saved === null) return;
+  closePerteEditor();
+  renderWasteView();
+  renderProductsList();
+}
+
+function openPerteDetails(perteId) {
+  const sale = getWasteSales().find((entry) => entry.id === perteId);
+  if (!sale) return;
+  const item = sale.items?.[0];
+  const product = item ? getProductById(item.productId) : null;
+  const detail = document.getElementById('perte-details-modal');
+  const body = document.getElementById('perte-details-body');
+  if (!detail || !body) return;
+  detail.dataset.perteId = sale.id;
+  body.innerHTML = `
+    <div class="expense-detail-row"><span>Produit</span><strong>${escapeHtml(product?.name || item?.productName || 'Produit supprimé')}</strong></div>
+    <div class="expense-detail-row"><span>Quantité</span><strong>${Number(item?.quantity || 0)}</strong></div>
+    <div class="expense-detail-row"><span>Motif</span><strong>${escapeHtml(sale.reason || 'Autre')}</strong></div>
+    <div class="expense-detail-row"><span>Date</span><strong>${new Date(sale.createdAt).toLocaleDateString('fr-FR')}</strong></div>
+    <div class="expense-detail-row expense-detail-note"><span>Note</span><strong>${escapeHtml(sale.note || 'Aucune note')}</strong></div>
+  `;
+  detail.classList.remove('hidden');
+}
+
+function closePerteDetails() {
+  document.getElementById('perte-details-modal')?.classList.add('hidden');
+}
+
+async function confirmPerteDelete() {
+  const saleId = pendingDeletePerteId;
+  if (!saleId) return;
+  const saved = await mutate(`/sales/${saleId}`, 'DELETE', null, () => {
+    state.sales = state.sales.filter((entry) => entry.id !== saleId);
+  });
+  if (saved === null) return;
+  pendingDeletePerteId = null;
+  document.getElementById('perte-delete-modal')?.classList.add('hidden');
+  closePerteDetails();
+  renderWasteView();
+  renderProductsList();
+}
+
+async function deletePerte(perteId) {
+  const sale = getWasteSales().find((entry) => entry.id === perteId);
+  if (!sale) return;
+  pendingDeletePerteId = sale.id;
+  document.getElementById('perte-delete-text').textContent = `Voulez-vous vraiment supprimer cette perte ?`;
+  document.getElementById('perte-delete-modal').classList.remove('hidden');
 }
 
 async function deleteProduct(productId) {
@@ -1379,9 +1621,6 @@ function renderClientProfilePage(container, customer) {
           <div class="customer-summary-card${owed > 0 ? ' customer-summary-card-owed' : ''}">
             <div class="customer-summary-header"><span>Dette en cours</span></div>
             <strong class="customer-summary-total">${formatMoney(owed)}</strong>
-            ${owed > 0
-              ? `<button type="button" class="primary-btn compact-btn" data-record-payment>Enregistrer un paiement</button>`
-              : '<small class="subtle">Solde réglé</small>'}
           </div>
         </div>
       </div>
@@ -1444,7 +1683,6 @@ function renderClientProfilePage(container, customer) {
     renderClientProfilePage(container, customer);
   });
   container.querySelectorAll('[data-client-invoice-id]').forEach((button) => button.addEventListener('click', () => navigateClient(`/clients/${encodeURIComponent(customer.id)}/invoices/${encodeURIComponent(button.dataset.clientInvoiceId)}`)));
-  container.querySelector('[data-record-payment]')?.addEventListener('click', () => openPaymentModal(customer.id));
 }
 
 function renderClientInvoicePage(container, customer, invoiceId) {
@@ -1466,18 +1704,22 @@ function renderClientInvoicePage(container, customer, invoiceId) {
     return;
   }
 
-  const payments = customer.debtHistory.filter((entry) => entry.type === 'payment' && entry.saleId === invoice.id).sort((a, b) => new Date(b.date) - new Date(a.date));
+  const payments = customer.debtHistory
+    .filter((entry) => entry.type === 'payment' && entry.saleId === invoice.id)
+    .sort((a, b) => new Date(a.date) - new Date(b.date));
+  const remaining = getInvoiceRemainingAmount(invoice);
   container.innerHTML = `
     <div class="ledger-page ledger-invoice-page">
       <div class="ledger-page-header"><button type="button" class="ledger-back-btn" data-client-back>← Profil de ${customer.name}</button></div>
       <div class="ledger-entity-header"><div><p class="section-kicker">Détails de la facture</p><h3>Facture n°${invoice.id.slice(-4)}</h3><span class="subtle">${new Date(invoice.createdAt).toLocaleString('fr-FR')} · ${customer.name} · ${customer.phone}</span></div><b class="ledger-status ${getInvoiceRemainingAmount(invoice) <= 0 ? 'ledger-status-paid' : ''}">${getInvoiceStatus(invoice)}</b></div>
       <table class="ledger-detail-items"><thead><tr><th>Produit</th><th>Quantité</th><th>Prix unitaire</th><th>Total</th></tr></thead><tbody>${invoice.items.map((item) => `<tr><td>${item.productName}</td><td>${item.quantity}</td><td>${formatMoney(item.unitPrice)}</td><td>${formatMoney(item.subtotal)}</td></tr>`).join('')}</tbody></table>
-      <div class="ledger-financial-summary">${invoice.discountPercent > 0 ? `<div><span>Remise (${invoice.discountPercent} %)</span><strong>-${formatMoney(invoice.discount)}</strong></div>` : ''}<div><span>Total de la facture</span><strong>${formatMoney(invoice.totalAmount)}</strong></div><div><span>Total payé</span><strong>${formatMoney(getInvoicePaidAmount(invoice))}</strong></div><div><span>Reste à payer</span><strong>${formatMoney(getInvoiceRemainingAmount(invoice))}</strong></div></div>
-      <div class="ledger-payment-history"><h4>Historique des paiements</h4>${payments.length ? payments.map((payment) => `<div><span>${new Date(payment.date).toLocaleString('fr-FR')}</span><strong>${formatMoney(payment.amount)}</strong></div>`).join('') : '<p class="empty-state">Aucun paiement enregistré pour cette facture.</p>'}</div>
-      <p class="ledger-view-only-note">Consultation uniquement. Les paiements se gèrent depuis le profil du client, sur la dette en cours.</p>
+      <div class="ledger-financial-summary">${invoice.discountPercent > 0 ? `<div><span>Remise (${invoice.discountPercent} %)</span><strong>-${formatMoney(invoice.discount)}</strong></div>` : ''}<div><span>Total de la facture</span><strong>${formatMoney(invoice.totalAmount)}</strong></div><div><span>Total payé</span><strong>${formatMoney(getInvoicePaidAmount(invoice))}</strong></div><div><span>Reste à payer</span><strong>${formatMoney(remaining)}</strong></div><div><span>Statut</span><strong>${getInvoiceStatus(invoice)}</strong></div></div>
+      <div class="ledger-payment-history"><h4>Historique des paiements</h4>${payments.length ? payments.map((payment, index) => `<div><span><strong>Paiement ${index + 1}</strong><small>${new Date(payment.date).toLocaleDateString('fr-FR')}</small></span><strong>${formatMoney(payment.amount)}</strong></div>`).join('') : '<p class="empty-state">Aucun paiement enregistré pour cette facture.</p>'}</div>
+      ${remaining > 0 ? `<button type="button" class="primary-btn" data-record-invoice-payment>Enregistrer un paiement</button>` : '<p class="ledger-paid-note">Facture entièrement réglée.</p>'}
     </div>
   `;
   container.querySelector('[data-client-back]')?.addEventListener('click', () => navigateClient(`/clients/${encodeURIComponent(customer.id)}`));
+  container.querySelector('[data-record-invoice-payment]')?.addEventListener('click', () => openPaymentModal(customer.id, invoice.id));
 }
 
 // The business identity printed on every invoice. It is the legal header from
@@ -1788,6 +2030,8 @@ async function addCustomerFromPos() {
 }
 
 let payingCustomerId = null;
+let payingInvoiceId = null;
+let isSavingPayment = false;
 let pendingSale = null;
 let isCompletingTransaction = false;
 
@@ -1828,19 +2072,21 @@ function previewAllocation(customerId, amount) {
   return slices;
 }
 
-function openPaymentModal(customerId) {
+function openPaymentModal(customerId, invoiceId) {
   const customer = getCustomerById(customerId);
-  if (!customer || Number(customer.balance) <= 0) return;
+  const invoice = state.sales.find((sale) => sale.id === invoiceId && sale.customerId === customerId);
+  if (!customer || !invoice || getInvoiceRemainingAmount(invoice) <= 0) return;
 
   payingCustomerId = customer.id;
-  document.getElementById('payment-modal-customer').textContent = `${customer.name} · ${customer.phone}`;
-  document.getElementById('payment-outstanding').textContent = formatMoney(customer.balance);
+  payingInvoiceId = invoice.id;
+  document.getElementById('payment-modal-customer').textContent = `${customer.name} · Facture n°${invoice.id.slice(-4)}`;
+  document.getElementById('payment-outstanding').textContent = formatMoney(getInvoiceRemainingAmount(invoice));
 
   const input = document.getElementById('payment-amount');
   input.value = '';
-  input.max = customer.balance;
+  input.max = getInvoiceRemainingAmount(invoice);
+  document.getElementById('payment-date').value = toDateInputValue(new Date());
   showMessage('payment-message', '', '');
-  renderPaymentAllocation();
 
   document.getElementById('payment-modal').classList.remove('hidden');
   input.focus();
@@ -1848,6 +2094,7 @@ function openPaymentModal(customerId) {
 
 function closePaymentModal() {
   payingCustomerId = null;
+  payingInvoiceId = null;
   document.getElementById('payment-form').reset();
   showMessage('payment-message', '', '');
   document.getElementById('payment-modal').classList.add('hidden');
@@ -1884,27 +2131,37 @@ function renderPaymentAllocation() {
 
 async function handlePaymentSubmit(event) {
   event.preventDefault();
-  if (!payingCustomerId) return;
+  if (!payingCustomerId || !payingInvoiceId || isSavingPayment) return;
 
   const customer = getCustomerById(payingCustomerId);
+  const invoice = state.sales.find((sale) => sale.id === payingInvoiceId);
   const amount = Number(document.getElementById('payment-amount').value);
+  const date = document.getElementById('payment-date').value;
 
-  if (!customer || !Number.isFinite(amount) || amount <= 0) {
+  if (!customer || !invoice || !Number.isFinite(amount) || amount <= 0) {
     showMessage('payment-message', 'Saisissez un montant supérieur à 0.', 'error');
     return;
   }
-  if (amount > Number(customer.balance || 0)) {
-    showMessage('payment-message', `Le paiement ne peut pas dépasser la dette en cours (${formatMoney(customer.balance)}).`, 'error');
+  const remaining = getInvoiceRemainingAmount(invoice);
+  if (amount > remaining) {
+    showMessage('payment-message', `Le paiement ne peut pas dépasser le reste à payer (${formatMoney(remaining)}).`, 'error');
+    return;
+  }
+  if (!date) {
+    showMessage('payment-message', 'La date du paiement est obligatoire.', 'error');
     return;
   }
 
-  const settled = previewAllocation(customer.id, amount).filter((slice) => slice.settles).length;
-  const saved = await mutate(`/customers/${customer.id}/payments`, 'POST', { amount });
+  const button = document.getElementById('confirm-payment-btn');
+  isSavingPayment = true;
+  if (button) button.disabled = true;
+  const saved = await mutate(`/sales/${invoice.id}/payments`, 'POST', { amount, date });
+  isSavingPayment = false;
+  if (button) button.disabled = false;
   if (saved === null) return;
 
   closePaymentModal();
-  const note = settled ? ` ${plural(settled, 'facture')} soldée${settled > 1 ? 's' : ''}.` : '';
-  setSaveStatus('saved', `Paiement de ${formatMoney(amount)} enregistré pour ${customer.name}.${note}`);
+  setSaveStatus('saved', `Paiement de ${formatMoney(amount)} enregistré pour la facture n°${invoice.id.slice(-4)}.`);
 }
 
 const EMPTY_CART_ERRORS = {
@@ -2287,7 +2544,7 @@ async function completePurchase() {
 }
 
 function setStockScope(scope) {
-  const next = scope === 'purchases' ? 'purchases' : 'catalogue';
+  const next = scope === 'purchases' ? 'purchases' : scope === 'pertes' ? 'pertes' : 'catalogue';
   document.querySelectorAll('[data-stock-scope]').forEach((button) => {
     const active = button.dataset.stockScope === next;
     button.classList.toggle('active', active);
@@ -2295,9 +2552,18 @@ function setStockScope(scope) {
   });
   document.getElementById('stock-catalogue')?.classList.toggle('hidden', next !== 'catalogue');
   document.getElementById('stock-purchases')?.classList.toggle('hidden', next !== 'purchases');
-  // The "+" in the page header creates a product, which only makes sense on the
-  // catalogue side.
-  document.getElementById('add-product-btn')?.classList.toggle('hidden', next !== 'catalogue');
+  document.getElementById('stock-pertes')?.classList.toggle('hidden', next !== 'pertes');
+  const showAddProduct = next === 'catalogue';
+  document.getElementById('add-product-btn')?.classList.toggle('hidden', !showAddProduct);
+  document.getElementById('pertes-btn')?.classList.toggle('active', next === 'pertes');
+  if (next === 'pertes') {
+    const productFilter = document.getElementById('pertes-product-filter');
+    if (productFilter) {
+      productFilter.innerHTML = '<option value="all">Tous</option>' + state.products.map((product) => `<option value="${product.id}">${escapeHtml(product.name)}</option>`).join('');
+    }
+    if (!pertesFilters.productId) pertesFilters.productId = 'all';
+    productFilter.value = pertesFilters.productId || 'all';
+  }
 }
 
 function setupPurchaseListeners() {
@@ -2331,23 +2597,23 @@ function setupPurchaseListeners() {
 // Label, sign against the till, and which side of the stock ledger each type sits
 // on. `cash` is what the type does to money actually in the drawer.
 const REPORT_TYPES = {
-  sale:       { label: 'Vente',      stock: 'out', chip: 'sale' },
-  purchase:   { label: 'Achat',      stock: 'in',  chip: 'purchase' },
-  return:     { label: 'Retour',     stock: 'in',  chip: 'return' },
-  waste:      { label: 'Perte',      stock: 'out', chip: 'waste' },
-  adjustment: { label: 'Ajustement +', stock: 'in',  chip: 'adjustment' },
+  sale: { label: 'Vente', stock: 'out', chip: 'sale' },
+  purchase: { label: 'Achat', stock: 'in', chip: 'purchase' },
+  return: { label: 'Retour', stock: 'in', chip: 'return' },
+  waste: { label: 'Perte', stock: 'out', chip: 'waste' },
+  adjustment: { label: 'Ajustement +', stock: 'in', chip: 'adjustment' },
   adjustment_out: { label: 'Ajustement −', stock: 'out', chip: 'adjustment' }
 };
 
 // Which transaction types each filter chip lets through. 'money' is the cash view:
 // only the types that move money in or out of the till.
 const REPORT_CATEGORIES = {
-  all:        ['sale', 'purchase', 'return', 'waste', 'adjustment', 'adjustment_out'],
-  money:      ['sale', 'purchase', 'return'],
-  sale:       ['sale'],
-  purchase:   ['purchase'],
-  return:     ['return'],
-  waste:      ['waste'],
+  all: ['sale', 'purchase', 'return', 'waste', 'adjustment', 'adjustment_out'],
+  money: ['sale', 'purchase', 'return'],
+  sale: ['sale'],
+  purchase: ['purchase'],
+  return: ['return'],
+  waste: ['waste'],
   adjustment: ['adjustment', 'adjustment_out']
 };
 
@@ -2518,7 +2784,7 @@ function reportTiles(summary) {
     ['Vendus', summary.unitsSold, formatMoney(summary.salesValue)],
     ['Achetés', summary.unitsBought, formatMoney(summary.purchaseValue)],
     ['Retournés', summary.unitsReturned, formatMoney(summary.returnValue)],
-    ['Perdus', summary.unitsWasted, formatMoney(summary.wasteValue)],
+    ['Perdus', summary.unitsWasted, 'Stock uniquement'],
     ['Ajustés', summary.unitsAdjusted, 'Corrections manuelles']
   ];
 
@@ -2700,7 +2966,7 @@ function buildReportSheet() {
     ['Ventes', `${summary.unitsSold} art. · ${formatMoney(summary.salesValue)}`],
     ['Achats', `${summary.unitsBought} art. · ${formatMoney(summary.purchaseValue)}`],
     ['Retours', `${summary.unitsReturned} art. · ${formatMoney(summary.returnValue)}`],
-    ['Pertes', `${summary.unitsWasted} art. · ${formatMoney(summary.wasteValue)}`],
+    ['Pertes', `${summary.unitsWasted} article(s) · stock uniquement`],
     ['Dépenses', formatMoney(summary.expenseValue)]
   ];
 
@@ -2962,6 +3228,7 @@ function renderAll() {
   renderCart();
   renderCustomerSelects();
   renderProductsList();
+  renderWasteView();
   renderClientRoute();
   renderPurchases();
   renderReports();
@@ -2977,6 +3244,63 @@ function setupEventListeners() {
     renderPosCustomerField();
   });
   document.getElementById('product-search').addEventListener('input', renderProductsList);
+  document.getElementById('pertes-product-filter')?.addEventListener('change', (event) => {
+    pertesFilters.productId = event.target.value;
+    renderWasteView();
+  });
+  document.querySelector('[data-pertes-reset]')?.addEventListener('click', resetPerteFilters);
+  document.getElementById('pertes-date-toggle')?.addEventListener('click', () => {
+    const panel = document.getElementById('pertes-date-panel');
+    if (!panel) return;
+    panel.classList.toggle('hidden');
+    if (!panel.classList.contains('hidden')) {
+      document.getElementById('pertes-date-start')?.focus();
+    }
+  });
+  document.getElementById('pertes-date-start')?.addEventListener('change', (event) => {
+    pertesFilters.start = event.target.value;
+    pertesFilters.mode = getDateFilterMode(pertesFilters.start, pertesFilters.end);
+    renderWasteView();
+  });
+  document.getElementById('pertes-date-end')?.addEventListener('change', (event) => {
+    pertesFilters.end = event.target.value;
+    pertesFilters.mode = getDateFilterMode(pertesFilters.start, pertesFilters.end);
+    renderWasteView();
+  });
+  document.getElementById('pertes-reset-date')?.addEventListener('click', resetPerteFilters);
+  document.getElementById('add-perte-btn')?.addEventListener('click', () => openPerteEditor());
+  document.getElementById('perte-form')?.addEventListener('submit', handlePerteSubmit);
+  document.getElementById('cancel-perte-edit')?.addEventListener('click', closePerteEditor);
+  document.getElementById('close-perte-editor')?.addEventListener('click', closePerteEditor);
+  document.getElementById('perte-editor-modal')?.addEventListener('click', (event) => {
+    if (event.target.id === 'perte-editor-modal') closePerteEditor();
+  });
+  document.getElementById('confirm-perte-delete')?.addEventListener('click', confirmPerteDelete);
+  document.getElementById('cancel-perte-delete')?.addEventListener('click', () => {
+    pendingDeletePerteId = null;
+    document.getElementById('perte-delete-modal')?.classList.add('hidden');
+  });
+  document.getElementById('perte-delete-modal')?.addEventListener('click', (event) => {
+    if (event.target.id === 'perte-delete-modal') {
+      pendingDeletePerteId = null;
+      event.target.classList.add('hidden');
+    }
+  });
+  document.getElementById('close-perte-details')?.addEventListener('click', closePerteDetails);
+  document.getElementById('edit-perte-from-details')?.addEventListener('click', () => {
+    const id = document.getElementById('perte-details-modal')?.dataset.perteId;
+    if (id) {
+      closePerteDetails();
+      openPerteEditor(id);
+    }
+  });
+  document.getElementById('delete-perte-from-details')?.addEventListener('click', () => {
+    const id = document.getElementById('perte-details-modal')?.dataset.perteId;
+    if (id) {
+      closePerteDetails();
+      deletePerte(id);
+    }
+  });
   document.getElementById('payment-method-select').addEventListener('change', updatePosPaymentFields);
   document.getElementById('sale-discount-percent').addEventListener('input', (event) => {
     saleDiscountPercent = Math.min(100, Math.max(0, Number(event.target.value) || 0));
@@ -2999,10 +3323,9 @@ function setupEventListeners() {
   document.getElementById('payment-form').addEventListener('submit', handlePaymentSubmit);
   document.getElementById('payment-amount').addEventListener('input', renderPaymentAllocation);
   document.getElementById('payment-pay-all').addEventListener('click', () => {
-    const customer = getCustomerById(payingCustomerId);
-    if (!customer) return;
-    document.getElementById('payment-amount').value = customer.balance;
-    renderPaymentAllocation();
+    const invoice = state.sales.find((sale) => sale.id === payingInvoiceId);
+    if (!invoice) return;
+    document.getElementById('payment-amount').value = getInvoiceRemainingAmount(invoice);
   });
   document.getElementById('cancel-payment-btn').addEventListener('click', closePaymentModal);
   document.getElementById('close-payment-modal').addEventListener('click', closePaymentModal);
@@ -3016,6 +3339,7 @@ function setupEventListeners() {
   document.getElementById('cancel-product-edit').addEventListener('click', cancelProductEdit);
   document.getElementById('close-product-editor').addEventListener('click', cancelProductEdit);
   document.getElementById('add-product-btn').addEventListener('click', focusProductEditor);
+  document.getElementById('pertes-btn').addEventListener('click', () => setStockScope('pertes'));
   document.getElementById('product-editor-modal').addEventListener('click', (event) => {
     if (event.target.id === 'product-editor-modal') cancelProductEdit();
   });

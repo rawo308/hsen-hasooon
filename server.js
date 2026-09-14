@@ -39,14 +39,14 @@ if (!hasDatabaseCredentials) {
 
 const pool = hasDatabaseCredentials
   ? new Pool({
-      connectionString: pgConnectionString,
-      ssl: process.env.DB_SSL === 'false'
-        ? false
-        // Set DB_CA_CERT to the Aiven CA certificate to enable full verification.
-        : process.env.DB_CA_CERT
-          ? { ca: process.env.DB_CA_CERT }
-          : { rejectUnauthorized: false }
-    })
+    connectionString: pgConnectionString,
+    ssl: process.env.DB_SSL === 'false'
+      ? false
+      // Set DB_CA_CERT to the Aiven CA certificate to enable full verification.
+      : process.env.DB_CA_CERT
+        ? { ca: process.env.DB_CA_CERT }
+        : { rejectUnauthorized: false }
+  })
   : null;
 
 // --- session helpers -------------------------------------------------------
@@ -257,7 +257,7 @@ async function inTransaction(run) {
     await client.query('COMMIT');
     return result;
   } catch (error) {
-    await client.query('ROLLBACK').catch(() => {});
+    await client.query('ROLLBACK').catch(() => { });
     throw error;
   } finally {
     client.release();
@@ -392,6 +392,7 @@ function toSale(row) {
   }
   if (row.type === 'waste') {
     sale.reason = row.reason || '';
+    sale.note = row.note || '';
     return sale;
   }
   if (row.type === 'adjustment') return sale;
@@ -408,7 +409,7 @@ function toSale(row) {
 
 const SALE_COLUMNS = `
   s.id, s.type, s.created_at, s.customer_id, s.payment_method, s.payment_type,
-  s.total_amount, s.discount, s.discount_percent, s.supplier, s.reason, s.cash_refund, p.paid,
+  s.total_amount, s.discount, s.discount_percent, s.supplier, s.reason, s.note, s.cash_refund, p.paid,
   COALESCE((
     SELECT json_agg(json_build_object(
              'productId', i.product_id, 'productName', i.product_name,
@@ -706,20 +707,20 @@ app.delete('/api/customers/:id', requireAuth, requireDatabase, route(async (requ
 //   priceSource where a line's unit price comes from
 //   idPrefix    prefix for the generated transaction id
 const TRANSACTION_TYPES = {
-  sale:       { stock: -1, lockStock: true,  priceSource: 'catalogue', idPrefix: 'sale' },
-  return:     { stock: +1, lockStock: false, priceSource: 'catalogue', idPrefix: 'return' },
+  sale: { stock: -1, lockStock: true, priceSource: 'catalogue', idPrefix: 'sale' },
+  return: { stock: +1, lockStock: false, priceSource: 'catalogue', idPrefix: 'return' },
   // The only type where the browser's price is the truth: it is what the shop
   // actually paid, and nothing in the catalogue knows it.
-  purchase:   { stock: +1, lockStock: false, priceSource: 'client',    idPrefix: 'purchase' },
+  purchase: { stock: +1, lockStock: false, priceSource: 'client', idPrefix: 'purchase' },
   // Written off at selling price, so the figure is the revenue lost.
-  waste:      { stock: -1, lockStock: true,  priceSource: 'catalogue', idPrefix: 'waste' },
-  adjustment: { stock: +1, lockStock: false, priceSource: 'zero',      idPrefix: 'adjust' },
+  waste: { stock: -1, lockStock: true, priceSource: 'zero', idPrefix: 'waste' },
+  adjustment: { stock: +1, lockStock: false, priceSource: 'zero', idPrefix: 'adjust' },
   // A recount can find fewer units as easily as more, so the correction goes both
   // ways. Downward locks the row and cannot push stock below zero.
-  adjustment_out: { stock: -1, lockStock: true, priceSource: 'zero',    idPrefix: 'adjust' }
+  adjustment_out: { stock: -1, lockStock: true, priceSource: 'zero', idPrefix: 'adjust' }
 };
 
-const WASTE_REASONS = ['Pourriture', 'Casse', 'Invendu', 'Vol', 'Autre'];
+const WASTE_REASONS = ['Produit périmé', 'Produit avarié', 'Produit endommagé', 'Produit cassé', 'Perdu', 'Pourriture', 'Casse', 'Invendu', 'Vol', 'Autre'];
 
 // Prices and stock are read inside the transaction, so the total is the store's
 // own and two registers cannot oversell the same unit.
@@ -808,6 +809,11 @@ app.post('/api/sales', requireAuth, requireDatabase, route(async (request, respo
   const body = request.body || {};
   const type = Object.prototype.hasOwnProperty.call(TRANSACTION_TYPES, body.type) ? body.type : 'sale';
   const rules = TRANSACTION_TYPES[type];
+  const saleDate = type === 'waste' && typeof body.date === 'string' && body.date.trim() ? body.date.trim() : null;
+  if (type === 'waste' && saleDate && !/^\d{4}-\d{2}-\d{2}$/.test(saleDate)) {
+    throw new RequestError(400, 'La date de la perte est invalide.');
+  }
+  const note = type === 'waste' ? optionalText(body.note, { max: 500 }) : '';
   // A supplier delivery and a write-off have no customer, whatever was sent.
   const customerId = CUSTOMER_TYPES.has(type) && typeof body.customerId === 'string' && body.customerId
     ? body.customerId
@@ -858,11 +864,12 @@ app.post('/api/sales', requireAuth, requireDatabase, route(async (request, respo
     }
 
     const saleId = newId(rules.idPrefix);
+    const createdAt = type === 'waste' && saleDate ? new Date(`${saleDate}T12:00:00`) : new Date();
     await client.query(
       `INSERT INTO sales (id, type, created_at, customer_id, payment_method, payment_type,
-                          total_amount, discount, discount_percent, supplier, reason)
-       VALUES ($1, $2, NOW(), $3, $4, $5, $6, $7, $8, $9, $10)`,
-      [saleId, type, customerId, paymentMethod, paymentType, totalAmount, discount, discountPercent, supplier, reason]
+                          total_amount, discount, discount_percent, supplier, reason, note)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+      [saleId, type, createdAt, customerId, paymentMethod, paymentType, totalAmount, discount, discountPercent, supplier, reason, note]
     );
 
     for (const item of items) {
@@ -911,6 +918,71 @@ app.post('/api/sales', requireAuth, requireDatabase, route(async (request, respo
   response.status(201).json(result);
 }));
 
+app.put('/api/sales/:id', requireAuth, requireDatabase, route(async (request, response) => {
+  const body = request.body || {};
+  const saleId = request.params.id;
+
+  const result = await inTransaction(async (client) => {
+    const { rows } = await client.query('SELECT * FROM sales WHERE id = $1 FOR UPDATE', [saleId]);
+    if (!rows.length) throw new RequestError(404, 'Transaction introuvable.');
+    const existing = rows[0];
+    if (existing.type !== 'waste') throw new RequestError(400, 'Seules les pertes peuvent être modifiées via cette route.');
+
+    const saleDate = typeof body.date === 'string' && body.date.trim() ? body.date.trim() : null;
+    if (saleDate && !/^\d{4}-\d{2}-\d{2}$/.test(saleDate)) {
+      throw new RequestError(400, 'La date de la perte est invalide.');
+    }
+    const reason = optionalText(body.reason, { max: 100 }) || 'Autre';
+    if (!WASTE_REASONS.includes(reason)) throw new RequestError(400, 'Motif de perte invalide.');
+    const note = optionalText(body.note, { max: 500 });
+
+    const { rows: oldItems } = await client.query(
+      'SELECT product_id, quantity FROM sale_items WHERE sale_id = $1 AND product_id IS NOT NULL',
+      [saleId]
+    );
+
+    for (const item of oldItems) {
+      await client.query(
+        `UPDATE products SET stock = stock + $2, updated_at = NOW() WHERE id = $1`,
+        [item.product_id, item.quantity]
+      );
+    }
+
+    const rawItems = Array.isArray(body.items) && body.items.length ? body.items : [];
+    if (!rawItems.length) throw new RequestError(400, 'Le panier est vide.');
+    // Restore the old loss first, inside this transaction, so a larger valid
+    // replacement is checked against the stock after undoing the old loss.
+    const items = await priceItems(client, rawItems, { lockStock: true, priceSource: 'zero' });
+    const totalAmount = 0;
+
+    await client.query('DELETE FROM sale_items WHERE sale_id = $1', [saleId]);
+    for (const item of items) {
+      await client.query(
+        `INSERT INTO sale_items (sale_id, product_id, product_name, quantity, unit_price, subtotal)
+         VALUES ($1, $2, $3, $4, $5, $6)`,
+        [saleId, item.productId, item.productName, item.quantity, item.unitPrice, item.subtotal]
+      );
+      await client.query('UPDATE products SET stock = stock - $2, updated_at = NOW() WHERE id = $1', [
+        item.productId,
+        item.quantity
+      ]);
+    }
+
+    const createdAt = saleDate ? new Date(`${saleDate}T12:00:00`) : new Date(existing.created_at);
+    await client.query(
+      `UPDATE sales SET created_at = $2, total_amount = $3, reason = $4, note = $5 WHERE id = $1`,
+      [saleId, createdAt, totalAmount, reason, note]
+    );
+
+    return {
+      sale: await readSale(client, saleId),
+      products: await readProducts(client, 'WHERE id = ANY($1::text[])', [items.map((item) => item.productId)])
+    };
+  });
+
+  response.json(result);
+}));
+
 app.delete('/api/sales/:id', requireAuth, requireDatabase, route(async (request, response) => {
   const result = await inTransaction(async (client) => {
     const { rows } = await client.query('SELECT id, type, customer_id FROM sales WHERE id = $1 FOR UPDATE', [
@@ -954,6 +1026,10 @@ app.delete('/api/sales/:id', requireAuth, requireDatabase, route(async (request,
 // the invoice's paid amount and status are read back from it.
 app.post('/api/sales/:id/payments', requireAuth, requireDatabase, route(async (request, response) => {
   const amount = positiveAmount(request.body?.amount, 'Le montant du paiement');
+  const paymentDate = typeof request.body?.date === 'string' ? request.body.date.trim() : '';
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(paymentDate)) {
+    throw new RequestError(400, 'La date du paiement est obligatoire.');
+  }
 
   const result = await inTransaction(async (client) => {
     // Locked on its own first: FOR UPDATE cannot reach through the join to the
@@ -978,8 +1054,8 @@ app.post('/api/sales/:id/payments', requireAuth, requireDatabase, route(async (r
 
     await client.query(
       `INSERT INTO debt_transactions (id, customer_id, sale_id, type, amount, transaction_date)
-       VALUES ($1, $2, $3, 'payment', $4, NOW())`,
-      [newId('payment'), sale.customer_id, sale.id, amount]
+       VALUES ($1, $2, $3, 'payment', $4, $5)`,
+      [newId('payment'), sale.customer_id, sale.id, amount, new Date(`${paymentDate}T12:00:00`)]
     );
 
     return { sale: await readSale(client, sale.id), customer: await readCustomer(client, sale.customer_id) };
