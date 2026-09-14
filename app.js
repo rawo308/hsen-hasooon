@@ -2537,7 +2537,19 @@ function addToPurchase(productId) {
   const existing = purchaseCart.find((item) => item.productId === productId);
   purchaseCart = [{ productId, productName: product.name, quantity: purchaseCart[0]?.quantity || 1, unitPrice: 0 }];
   document.getElementById('purchase-product-search').value = product.name;
+  document.getElementById('clear-purchase-product')?.classList.remove('hidden');
+  document.getElementById('purchase-product-list').innerHTML = '';
   renderPurchaseCart();
+}
+
+function clearPurchaseProduct() {
+  purchaseCart = [];
+  const search = document.getElementById('purchase-product-search');
+  if (search) search.value = '';
+  document.getElementById('clear-purchase-product')?.classList.add('hidden');
+  document.getElementById('purchase-product-list').innerHTML = '';
+  renderPurchaseCart();
+  search?.focus();
 }
 
 function renderPurchaseCart() {
@@ -2699,11 +2711,13 @@ function openPurchaseEditor(purchaseId = null) {
   const item = sale?.items?.[0];
   purchaseCart = item ? [{ productId: item.productId, productName: item.productName, quantity: item.quantity, unitPrice: 0 }] : [];
   document.getElementById('purchase-product-search').value = item?.productName || '';
+  document.getElementById('clear-purchase-product')?.classList.toggle('hidden', !item);
   document.getElementById('purchase-quantity').value = item?.quantity || 1;
   document.getElementById('purchase-date').value = sale?.createdAt ? toDateInputValue(new Date(sale.createdAt)) : toDateInputValue(new Date());
   document.getElementById('purchase-editor-title').textContent = sale ? 'Modifier l’ajout au stock' : 'Ajouter au stock';
   showMessage('purchase-message', '', '');
   renderPurchaseProducts();
+  if (item) document.getElementById('purchase-product-list').innerHTML = '';
   renderPurchaseCart();
   document.getElementById('purchase-editor-modal').classList.remove('hidden');
   document.getElementById('purchase-product-search').focus();
@@ -2712,6 +2726,7 @@ function openPurchaseEditor(purchaseId = null) {
 function closePurchaseEditor() {
   purchaseCart = [];
   editingPurchaseId = null;
+  document.getElementById('clear-purchase-product')?.classList.add('hidden');
   document.getElementById('purchase-editor-modal')?.classList.add('hidden');
 }
 
@@ -2790,6 +2805,7 @@ function setupPurchaseListeners() {
     renderPurchaseHistory();
   });
   document.getElementById('clear-purchase-history-product')?.addEventListener('click', clearPurchaseHistoryProduct);
+  document.getElementById('clear-purchase-product')?.addEventListener('click', clearPurchaseProduct);
   document.getElementById('open-purchase-editor')?.addEventListener('click', openPurchaseEditor);
   document.getElementById('close-purchase-editor')?.addEventListener('click', closePurchaseEditor);
   document.getElementById('cancel-purchase-editor')?.addEventListener('click', closePurchaseEditor);

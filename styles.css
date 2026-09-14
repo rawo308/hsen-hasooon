@@ -4636,8 +4636,8 @@ body.is-loading .main-panel {
   z-index: 30;
   top: calc(100% + 8px);
   left: 0;
-  width: min(320px, calc(100vw - 32px));
-  padding: 14px;
+  width: min(276px, calc(100vw - 28px));
+  padding: 10px;
   border: 1px solid var(--line);
   border-radius: 12px;
   background: var(--panel);
@@ -4672,11 +4672,11 @@ body.is-loading .main-panel {
 .shared-date-calendar-grid {
   display: grid;
   grid-template-columns: repeat(7, 1fr);
-  gap: 3px;
+  gap: 1px;
 }
 
 .shared-date-weekdays {
-  margin: 14px 0 5px;
+  margin: 9px 0 3px;
   color: var(--muted);
   font-size: 0.68rem;
   font-weight: 700;
@@ -4684,7 +4684,7 @@ body.is-loading .main-panel {
 }
 
 .shared-date-day {
-  min-height: 32px;
+  min-height: 27px;
   border: 0;
   border-radius: 6px;
   background: transparent;
@@ -4712,12 +4712,12 @@ body.is-loading .main-panel {
 }
 
 .shared-date-empty {
-  min-height: 32px;
+  min-height: 27px;
 }
 
 .shared-date-selection {
-  margin-top: 12px;
-  padding-top: 10px;
+  margin-top: 8px;
+  padding-top: 8px;
   border-top: 1px solid var(--line);
   color: var(--muted);
   font-size: 0.72rem;
@@ -4731,7 +4731,7 @@ body.is-loading .main-panel {
 }
 
 .shared-date-actions {
-  margin-top: 12px;
+  margin-top: 8px;
 }
 
 .report-mode-toggle {
@@ -5475,4 +5475,28 @@ tr:focus-within>.row-actions .link-btn {
   color: var(--muted);
   font-size: 0.78rem;
   font-weight: 700;
+}
+
+.purchase-product-field {
+  position: relative;
+  display: block;
+}
+
+.purchase-product-field input {
+  padding-right: 36px;
+}
+
+.purchase-product-clear {
+  position: absolute;
+  top: 50%;
+  right: 9px;
+  width: 22px;
+  height: 22px;
+  transform: translateY(-50%);
+  border: 0;
+  border-radius: 50%;
+  background: var(--panel-soft);
+  color: var(--muted);
+  font-size: 1rem;
+  line-height: 1;
 }

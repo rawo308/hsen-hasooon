@@ -355,8 +355,10 @@
               </div>
               <div class="purchase-editor-body">
                 <div class="purchase-selector-block">
-                  <label><span>Produit</span><input id="purchase-product-search" type="search"
-                      placeholder="Rechercher un produit..." autocomplete="off" /></label>
+                  <label><span>Produit</span><span class="purchase-product-field"><input id="purchase-product-search"
+                        type="search" placeholder="Rechercher un produit..." autocomplete="off" /><button type="button"
+                        id="clear-purchase-product" class="purchase-product-clear hidden"
+                        aria-label="Effacer le produit">&times;</button></span></label>
                   <div id="purchase-product-list" class="purchase-product-options" translate="no"></div>
                 </div>
                 <div id="purchase-cart-items" class="purchase-editor-line"></div>
