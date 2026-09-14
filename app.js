@@ -959,6 +959,11 @@ function renderWasteView() {
   const totalEl = document.getElementById('pertes-total-quantity');
   const filterSummaryEl = document.getElementById('pertes-filter-summary');
   const rows = getWasteRows();
+  const productSearch = document.getElementById('pertes-product-search');
+  const selectedProduct = pertesFilters.productId && pertesFilters.productId !== 'all'
+    ? getProductById(pertesFilters.productId) : null;
+  if (productSearch && document.activeElement !== productSearch) productSearch.value = selectedProduct?.name || '';
+  document.getElementById('clear-pertes-product')?.classList.toggle('hidden', !selectedProduct);
   const totalUnits = rows.reduce((sum, sale) => sum + Number(sale.items?.[0]?.quantity || 0), 0);
 
   if (summaryEl) summaryEl.textContent = `${plural(rows.length, 'perte')} · ${plural(totalUnits, 'article')} perdu`;
@@ -1064,13 +1069,57 @@ function updatePerteDateFields() {
 
 function resetPerteFilters() {
   pertesFilters = { mode: 'all', start: '', end: '', productId: 'all' };
-  const productFilter = document.getElementById('pertes-product-filter');
-  if (productFilter) productFilter.value = 'all';
+  const productSearch = document.getElementById('pertes-product-search');
+  if (productSearch) productSearch.value = '';
+  document.getElementById('clear-pertes-product')?.classList.add('hidden');
   document.getElementById('pertes-date-panel')?.classList.add('hidden');
   const start = document.getElementById('pertes-date-start');
   const end = document.getElementById('pertes-date-end');
   if (start) start.value = '';
   if (end) end.value = '';
+  renderWasteView();
+}
+
+function renderPerteHistoryProductOptions(query = '') {
+  const options = document.getElementById('pertes-product-options');
+  const input = document.getElementById('pertes-product-search');
+  if (!options || !input) return;
+  const normalizedQuery = query.trim().toLowerCase();
+  const matches = state.products
+    .filter((product) => product.name.toLowerCase().includes(normalizedQuery))
+    .slice(0, 30);
+  options.innerHTML = matches.length
+    ? matches.map((product) => `<button type="button" class="pertes-product-option" role="option" data-pertes-product-id="${product.id}">${escapeHtml(product.name)}</button>`).join('')
+    : '<p class="pertes-product-empty">Aucun produit trouvé.</p>';
+  options.classList.remove('hidden');
+  input.setAttribute('aria-expanded', 'true');
+}
+
+function closePerteHistoryProductOptions() {
+  const options = document.getElementById('pertes-product-options');
+  const input = document.getElementById('pertes-product-search');
+  options?.classList.add('hidden');
+  input?.setAttribute('aria-expanded', 'false');
+}
+
+function selectPerteHistoryProduct(productId) {
+  const product = getProductById(productId);
+  const input = document.getElementById('pertes-product-search');
+  const clear = document.getElementById('clear-pertes-product');
+  if (!product || !input) return;
+  pertesFilters.productId = product.id;
+  input.value = product.name;
+  clear?.classList.remove('hidden');
+  closePerteHistoryProductOptions();
+  renderWasteView();
+}
+
+function clearPerteHistoryProduct() {
+  pertesFilters.productId = 'all';
+  const input = document.getElementById('pertes-product-search');
+  input.value = '';
+  document.getElementById('clear-pertes-product')?.classList.add('hidden');
+  closePerteHistoryProductOptions();
   renderWasteView();
 }
 
@@ -2452,6 +2501,7 @@ async function confirmSaleTransaction() {
 let purchaseCart = [];
 let isSavingPurchase = false;
 let purchaseHistoryFilters = { mode: 'all', start: '', end: '', productId: 'all' };
+let editingPurchaseId = null;
 
 function getPurchaseTotal() {
   return purchaseCart.reduce((total, item) => total + item.quantity * item.unitPrice, 0);
@@ -2461,7 +2511,7 @@ function renderPurchaseProducts() {
   const container = document.getElementById('purchase-product-list');
   if (!container) return;
   const search = document.getElementById('purchase-product-search')?.value?.toLowerCase() || '';
-  const list = state.products.filter((product) => product.name.toLowerCase().includes(search));
+  const list = search ? state.products.filter((product) => product.name.toLowerCase().includes(search)).slice(0, 30) : [];
 
   // Nothing is ever out of stock for buying, so no button is ever disabled.
   container.innerHTML = list.length
@@ -2474,7 +2524,7 @@ function renderPurchaseProducts() {
       <button class="add-btn primary-btn" data-add-purchase="${product.id}">Ajouter</button>
     </div>
   `).join('')
-    : '<div class="empty-cart"><strong>Aucun produit</strong><p>Créez d’abord un produit dans le catalogue.</p></div>';
+    : search ? '<div class="empty-cart"><strong>Aucun produit trouvé</strong></div>' : '';
 
   container.querySelectorAll('[data-add-purchase]').forEach((button) => {
     button.addEventListener('click', () => addToPurchase(button.dataset.addPurchase));
@@ -2485,44 +2535,27 @@ function addToPurchase(productId) {
   const product = getProductById(productId);
   if (!product) return;
   const existing = purchaseCart.find((item) => item.productId === productId);
-  if (existing) existing.quantity += 1;
-  // Seeded from the selling price only as a starting point: it is the one number
-  // we have, and the buyer overwrites it with what was actually paid.
-  else purchaseCart.push({ productId, productName: product.name, quantity: 1, unitPrice: product.sellingPrice });
+  purchaseCart = [{ productId, productName: product.name, quantity: purchaseCart[0]?.quantity || 1, unitPrice: 0 }];
+  document.getElementById('purchase-product-search').value = product.name;
   renderPurchaseCart();
 }
 
 function renderPurchaseCart() {
   const container = document.getElementById('purchase-cart-items');
   if (!container) return;
-  const count = document.getElementById('purchase-count');
-  const units = purchaseCart.reduce((total, item) => total + item.quantity, 0);
-  if (count) count.textContent = plural(units, 'article');
-
   if (!purchaseCart.length) {
-    container.innerHTML = '<div class="empty-cart"><span class="empty-cart-icon">&#8595;</span><strong>Aucun achat en cours</strong><p>Ajoutez les produits reçus du fournisseur.</p></div>';
-    document.getElementById('purchase-total-value').textContent = formatMoney(0);
+    container.innerHTML = '<div class="empty-cart"><strong>Aucun produit sélectionné</strong><p>Recherchez puis sélectionnez un produit.</p></div>';
     return;
   }
 
   container.innerHTML = purchaseCart.map((item) => `
     <div class="cart-row">
-      <div class="cart-product-name">
-        <strong>${escapeHtml(item.productName)}</strong>
-      </div>
-      <button class="link-btn cart-remove-btn" data-purchase-remove="${item.productId}">Retirer</button>
+      <div class="cart-product-name"><strong>${escapeHtml(item.productName)}</strong></div>
       <label class="cart-quantity-field">
-        <span>Quantité</span>
+        <span>Quantité à ajouter</span>
         <input data-purchase-qty="${item.productId}" type="number" min="1" step="1" value="${item.quantity}" />
       </label>
-      <div class="price-box">
-        <label for="purchase-price-${item.productId}">Prix d’achat (F CFA)</label>
-        <input id="purchase-price-${item.productId}" data-purchase-price="${item.productId}" type="number" step="0.01" min="0" value="${item.unitPrice}" />
-      </div>
-      <div class="cart-line-total">
-        <span>Total de la ligne</span>
-        <strong>${formatMoney(item.quantity * item.unitPrice)}</strong>
-      </div>
+      <button class="link-btn cart-remove-btn" data-purchase-remove="${item.productId}">Changer</button>
     </div>
   `).join('');
 
@@ -2535,15 +2568,6 @@ function renderPurchaseCart() {
     });
   });
 
-  container.querySelectorAll('[data-purchase-price]').forEach((input) => {
-    input.addEventListener('change', (event) => {
-      const item = purchaseCart.find((entry) => entry.productId === input.dataset.purchasePrice);
-      if (!item) return;
-      item.unitPrice = Math.max(0, Number(event.target.value) || 0);
-      renderPurchaseCart();
-    });
-  });
-
   container.querySelectorAll('[data-purchase-remove]').forEach((button) => {
     button.addEventListener('click', () => {
       purchaseCart = purchaseCart.filter((entry) => entry.productId !== button.dataset.purchaseRemove);
@@ -2551,7 +2575,6 @@ function renderPurchaseCart() {
     });
   });
 
-  document.getElementById('purchase-total-value').textContent = formatMoney(getPurchaseTotal());
 }
 
 async function createProductFromPurchase() {
@@ -2604,12 +2627,10 @@ async function createProductFromPurchase() {
 function renderPurchases() {
   renderPurchaseProducts();
   renderPurchaseCart();
-  const historyProduct = document.getElementById('purchase-history-product');
-  if (historyProduct) {
-    const selectedProduct = purchaseHistoryFilters.productId || 'all';
-    historyProduct.innerHTML = '<option value="all">Tous</option>' + state.products.map((product) => `<option value="${product.id}">${escapeHtml(product.name)}</option>`).join('');
-    historyProduct.value = selectedProduct;
-  }
+  const historySearch = document.getElementById('purchase-history-product-search');
+  const selectedProduct = purchaseHistoryFilters.productId !== 'all' ? getProductById(purchaseHistoryFilters.productId) : null;
+  if (historySearch && document.activeElement !== historySearch) historySearch.value = selectedProduct?.name || '';
+  document.getElementById('clear-purchase-history-product')?.classList.toggle('hidden', !selectedProduct);
   renderPurchaseHistory();
 }
 
@@ -2630,22 +2651,57 @@ function renderPurchaseHistory() {
   list.innerHTML = rows.length ? rows.map((sale) => {
     const units = sale.items.reduce((sum, item) => sum + Number(item.quantity || 0), 0);
     const total = Number(sale.totalAmount || 0);
-    const products = sale.items.map((item) => `${escapeHtml(item.productName)} · ${item.quantity}`).join('<br>');
-    return `<article class="purchase-history-row">
+    const products = sale.items.map((item) => `${escapeHtml(item.productName)}`).join('<br>');
+    return `<article class="purchase-history-row" data-purchase-row="${sale.id}">
       <div class="purchase-history-date"><span>Date</span><strong>${new Date(sale.createdAt).toLocaleDateString('fr-FR')}</strong></div>
       <div class="purchase-history-product"><span>Produit</span><strong>${products}</strong></div>
       <div class="purchase-history-quantity"><span>Quantité ajoutée</span><strong>${units}</strong><small>article${units > 1 ? 's' : ''}</small></div>
-      <div class="purchase-history-total"><span>Total achat</span><strong>${formatMoney(total)}</strong></div>
-      <div class="purchase-history-supplier"><span>Fournisseur</span><strong>${escapeHtml(sale.supplier || 'Non précisé')}</strong></div>
+      <div class="purchase-history-actions"><button type="button" class="link-btn" data-purchase-view="${sale.id}">Voir</button><button type="button" class="link-btn" data-purchase-edit="${sale.id}">Modifier</button><button type="button" class="link-btn danger-link" data-purchase-delete="${sale.id}">Supprimer</button></div>
     </article>`;
   }).join('') : '<div class="empty-state-block"><strong>Aucun achat enregistré</strong><p>Les ajouts au stock apparaîtront ici.</p></div>';
+  list.querySelectorAll('[data-purchase-view]').forEach((button) => button.addEventListener('click', () => {
+    const sale = state.sales.find((entry) => entry.id === button.dataset.purchaseView);
+    if (sale) window.alert(`${sale.items.map((item) => `${item.productName} · ${item.quantity}`).join('\n')}\n${new Date(sale.createdAt).toLocaleDateString('fr-FR')}`);
+  }));
+  list.querySelectorAll('[data-purchase-edit]').forEach((button) => button.addEventListener('click', () => openPurchaseEditor(button.dataset.purchaseEdit)));
+  list.querySelectorAll('[data-purchase-delete]').forEach((button) => button.addEventListener('click', () => deletePurchase(button.dataset.purchaseDelete)));
 }
 
-function openPurchaseEditor() {
-  purchaseCart = [];
-  document.getElementById('purchase-product-search').value = '';
-  document.getElementById('purchase-supplier').value = '';
-  document.getElementById('purchase-date').value = toDateInputValue(new Date());
+function renderPurchaseHistoryProductOptions(query = '') {
+  const options = document.getElementById('purchase-history-product-options');
+  const input = document.getElementById('purchase-history-product-search');
+  if (!options || !input) return;
+  const matches = state.products.filter((product) => product.name.toLowerCase().includes(query.trim().toLowerCase())).slice(0, 30);
+  options.innerHTML = matches.length
+    ? matches.map((product) => `<button type="button" class="pertes-product-option" data-purchase-product-id="${product.id}">${escapeHtml(product.name)}</button>`).join('')
+    : '<p class="pertes-product-empty">Aucun produit trouvé.</p>';
+  options.classList.remove('hidden');
+  input.setAttribute('aria-expanded', 'true');
+}
+
+function clearPurchaseHistoryProduct() {
+  purchaseHistoryFilters.productId = 'all';
+  document.getElementById('purchase-history-product-search').value = '';
+  document.getElementById('clear-purchase-history-product')?.classList.add('hidden');
+  document.getElementById('purchase-history-product-options')?.classList.add('hidden');
+  renderPurchaseHistory();
+}
+
+async function deletePurchase(purchaseId) {
+  if (!window.confirm('Supprimer cet ajout au stock ? Le stock sera restauré.')) return;
+  const saved = await mutate(`/sales/${purchaseId}`, 'DELETE');
+  if (saved !== null) renderPurchases();
+}
+
+function openPurchaseEditor(purchaseId = null) {
+  const sale = purchaseId ? state.sales.find((entry) => entry.id === purchaseId && getTransactionType(entry) === 'purchase') : null;
+  editingPurchaseId = sale?.id || null;
+  const item = sale?.items?.[0];
+  purchaseCart = item ? [{ productId: item.productId, productName: item.productName, quantity: item.quantity, unitPrice: 0 }] : [];
+  document.getElementById('purchase-product-search').value = item?.productName || '';
+  document.getElementById('purchase-quantity').value = item?.quantity || 1;
+  document.getElementById('purchase-date').value = sale?.createdAt ? toDateInputValue(new Date(sale.createdAt)) : toDateInputValue(new Date());
+  document.getElementById('purchase-editor-title').textContent = sale ? 'Modifier l’ajout au stock' : 'Ajouter au stock';
   showMessage('purchase-message', '', '');
   renderPurchaseProducts();
   renderPurchaseCart();
@@ -2655,13 +2711,15 @@ function openPurchaseEditor() {
 
 function closePurchaseEditor() {
   purchaseCart = [];
+  editingPurchaseId = null;
   document.getElementById('purchase-editor-modal')?.classList.add('hidden');
 }
 
 async function completePurchase() {
   if (isSavingPurchase) return;
-  if (!purchaseCart.length) {
-    showMessage('purchase-message', 'Ajoutez au moins un produit à l’achat.', 'error');
+  const quantity = Number(document.getElementById('purchase-quantity')?.value || 0);
+  if (!purchaseCart.length || !Number.isInteger(quantity) || quantity <= 0) {
+    showMessage('purchase-message', 'Sélectionnez un produit et indiquez une quantité valide.', 'error');
     return;
   }
 
@@ -2672,21 +2730,13 @@ async function completePurchase() {
   try {
     // Unlike a sale, the unit price is sent: it is what the shop paid, and
     // nothing in the catalogue knows it.
-    const saved = await mutate('/sales', 'POST', {
-      type: 'purchase',
-      supplier: document.getElementById('purchase-supplier')?.value?.trim() || '',
-      date: document.getElementById('purchase-date')?.value || '',
-      items: purchaseCart.map((item) => ({
-        productId: item.productId,
-        quantity: item.quantity,
-        unitPrice: item.unitPrice
-      }))
-    });
+    const payload = { type: 'purchase', date: document.getElementById('purchase-date')?.value || '', items: [{ productId: purchaseCart[0].productId, quantity, unitPrice: 0 }] };
+    const saved = editingPurchaseId
+      ? await mutate(`/sales/${editingPurchaseId}`, 'PUT', payload)
+      : await mutate('/sales', 'POST', payload);
     if (saved === null) return;
 
     purchaseCart = [];
-    const supplierField = document.getElementById('purchase-supplier');
-    if (supplierField) supplierField.value = '';
     renderPurchases();
     closePurchaseEditor();
     showMessage(
@@ -2714,12 +2764,8 @@ function setStockScope(scope) {
   document.getElementById('add-product-btn')?.classList.toggle('hidden', !showAddProduct);
   document.getElementById('pertes-btn')?.classList.toggle('active', next === 'pertes');
   if (next === 'pertes') {
-    const productFilter = document.getElementById('pertes-product-filter');
-    if (productFilter) {
-      productFilter.innerHTML = '<option value="all">Tous</option>' + state.products.map((product) => `<option value="${product.id}">${escapeHtml(product.name)}</option>`).join('');
-    }
     if (!pertesFilters.productId) pertesFilters.productId = 'all';
-    productFilter.value = pertesFilters.productId || 'all';
+    renderWasteView();
   }
 }
 
@@ -2728,14 +2774,22 @@ function setupPurchaseListeners() {
     purchaseHistoryFilters = { ...purchaseHistoryFilters, ...filter };
     renderPurchaseHistory();
   });
-  const historyProduct = document.getElementById('purchase-history-product');
-  if (historyProduct) {
-    historyProduct.innerHTML = '<option value="all">Tous</option>' + state.products.map((product) => `<option value="${product.id}">${escapeHtml(product.name)}</option>`).join('');
-    historyProduct.addEventListener('change', (event) => {
-      purchaseHistoryFilters.productId = event.target.value;
-      renderPurchaseHistory();
-    });
-  }
+  document.getElementById('purchase-history-product-search')?.addEventListener('focus', (event) => renderPurchaseHistoryProductOptions(event.target.value));
+  document.getElementById('purchase-history-product-search')?.addEventListener('input', (event) => {
+    purchaseHistoryFilters.productId = 'all';
+    document.getElementById('clear-purchase-history-product')?.classList.add('hidden');
+    renderPurchaseHistoryProductOptions(event.target.value);
+  });
+  document.getElementById('purchase-history-product-options')?.addEventListener('click', (event) => {
+    const option = event.target.closest('[data-purchase-product-id]');
+    if (!option) return;
+    purchaseHistoryFilters.productId = option.dataset.purchaseProductId;
+    document.getElementById('purchase-history-product-search').value = getProductById(option.dataset.purchaseProductId)?.name || '';
+    document.getElementById('clear-purchase-history-product')?.classList.remove('hidden');
+    document.getElementById('purchase-history-product-options').classList.add('hidden');
+    renderPurchaseHistory();
+  });
+  document.getElementById('clear-purchase-history-product')?.addEventListener('click', clearPurchaseHistoryProduct);
   document.getElementById('open-purchase-editor')?.addEventListener('click', openPurchaseEditor);
   document.getElementById('close-purchase-editor')?.addEventListener('click', closePurchaseEditor);
   document.getElementById('cancel-purchase-editor')?.addEventListener('click', closePurchaseEditor);
@@ -3445,6 +3499,23 @@ function setupEventListeners() {
   document.getElementById('pertes-product-filter')?.addEventListener('change', (event) => {
     pertesFilters.productId = event.target.value;
     renderWasteView();
+  });
+  document.getElementById('pertes-product-search')?.addEventListener('focus', (event) => {
+    renderPerteHistoryProductOptions(event.target.value);
+  });
+  document.getElementById('pertes-product-search')?.addEventListener('input', (event) => {
+    pertesFilters.productId = 'all';
+    document.getElementById('clear-pertes-product')?.classList.add('hidden');
+    renderPerteHistoryProductOptions(event.target.value);
+  });
+  document.getElementById('pertes-product-options')?.addEventListener('click', (event) => {
+    const option = event.target.closest('[data-pertes-product-id]');
+    if (option) selectPerteHistoryProduct(option.dataset.pertesProductId);
+  });
+  document.getElementById('clear-pertes-product')?.addEventListener('click', clearPerteHistoryProduct);
+  document.addEventListener('click', (event) => {
+    const picker = document.getElementById('pertes-product-picker');
+    if (picker && !picker.contains(event.target)) closePerteHistoryProductOptions();
   });
   setupSharedDateFilter(document.getElementById('pertes-date-filter'), 'pertes', pertesFilters, (filter) => {
     pertesFilters = { ...pertesFilters, ...filter };

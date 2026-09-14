@@ -926,15 +926,15 @@ app.put('/api/sales/:id', requireAuth, requireDatabase, route(async (request, re
     const { rows } = await client.query('SELECT * FROM sales WHERE id = $1 FOR UPDATE', [saleId]);
     if (!rows.length) throw new RequestError(404, 'Transaction introuvable.');
     const existing = rows[0];
-    if (existing.type !== 'waste') throw new RequestError(400, 'Seules les pertes peuvent être modifiées via cette route.');
+    if (!['waste', 'purchase'].includes(existing.type)) throw new RequestError(400, 'Seules les pertes et les ajouts au stock peuvent être modifiés via cette route.');
 
     const saleDate = typeof body.date === 'string' && body.date.trim() ? body.date.trim() : null;
     if (saleDate && !/^\d{4}-\d{2}-\d{2}$/.test(saleDate)) {
-      throw new RequestError(400, 'La date de la perte est invalide.');
+      throw new RequestError(400, 'La date de la transaction est invalide.');
     }
-    const reason = optionalText(body.reason, { max: 100 }) || 'Autre';
-    if (!WASTE_REASONS.includes(reason)) throw new RequestError(400, 'Motif de perte invalide.');
-    const note = optionalText(body.note, { max: 500 });
+    const reason = existing.type === 'waste' ? optionalText(body.reason, { max: 100 }) || 'Autre' : '';
+    if (existing.type === 'waste' && !WASTE_REASONS.includes(reason)) throw new RequestError(400, 'Motif de perte invalide.');
+    const note = existing.type === 'waste' ? optionalText(body.note, { max: 500 }) : '';
 
     const { rows: oldItems } = await client.query(
       'SELECT product_id, quantity FROM sale_items WHERE sale_id = $1 AND product_id IS NOT NULL',
@@ -943,7 +943,7 @@ app.put('/api/sales/:id', requireAuth, requireDatabase, route(async (request, re
 
     for (const item of oldItems) {
       await client.query(
-        `UPDATE products SET stock = stock + $2, updated_at = NOW() WHERE id = $1`,
+        `UPDATE products SET stock = stock ${existing.type === 'purchase' ? '-' : '+'} $2, updated_at = NOW() WHERE id = $1`,
         [item.product_id, item.quantity]
       );
     }
@@ -952,8 +952,10 @@ app.put('/api/sales/:id', requireAuth, requireDatabase, route(async (request, re
     if (!rawItems.length) throw new RequestError(400, 'Le panier est vide.');
     // Restore the old loss first, inside this transaction, so a larger valid
     // replacement is checked against the stock after undoing the old loss.
-    const items = await priceItems(client, rawItems, { lockStock: true, priceSource: 'zero' });
-    const totalAmount = 0;
+    const items = await priceItems(client, rawItems, existing.type === 'purchase'
+      ? { lockStock: false, priceSource: 'zero' }
+      : { lockStock: true, priceSource: 'zero' });
+    const totalAmount = existing.type === 'purchase' ? 0 : 0;
 
     await client.query('DELETE FROM sale_items WHERE sale_id = $1', [saleId]);
     for (const item of items) {
@@ -962,7 +964,7 @@ app.put('/api/sales/:id', requireAuth, requireDatabase, route(async (request, re
          VALUES ($1, $2, $3, $4, $5, $6)`,
         [saleId, item.productId, item.productName, item.quantity, item.unitPrice, item.subtotal]
       );
-      await client.query('UPDATE products SET stock = stock - $2, updated_at = NOW() WHERE id = $1', [
+      await client.query(`UPDATE products SET stock = stock ${existing.type === 'purchase' ? '+' : '-'} $2, updated_at = NOW() WHERE id = $1`, [
         item.productId,
         item.quantity
       ]);

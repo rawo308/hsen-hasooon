@@ -274,16 +274,6 @@
         </div>
 
         <div id="stock-pertes" class="stock-view hidden">
-          <div class="card report-controls">
-            <div id="pertes-date-filter" class="shared-date-filter" data-date-filter="pertes"></div>
-            <div class="report-category-field">
-              <label for="pertes-product-filter"><span>Produit</span></label>
-              <select id="pertes-product-filter">
-                <option value="all">Tous</option>
-              </select>
-            </div>
-          </div>
-
           <div class="panel-header products-page-header pertes-header">
             <div>
               <p class="eyebrow">Pertes</p>
@@ -298,6 +288,20 @@
             <div class="loss-summary-row">
               <span>Total des pertes</span>
               <strong id="pertes-total-quantity">0 article</strong>
+            </div>
+          </div>
+
+          <div class="card report-controls">
+            <div id="pertes-date-filter" class="shared-date-filter" data-date-filter="pertes"></div>
+            <div class="pertes-product-filter">
+              <label for="pertes-product-search"><span>Produit</span></label>
+              <div class="pertes-product-picker" id="pertes-product-picker">
+                <input id="pertes-product-search" type="search" placeholder="Rechercher un produit" autocomplete="off"
+                  aria-controls="pertes-product-options" aria-expanded="false" />
+                <button type="button" id="clear-pertes-product" class="pertes-product-clear hidden"
+                  aria-label="Effacer le produit">&times;</button>
+                <div id="pertes-product-options" class="pertes-product-options hidden" role="listbox"></div>
+              </div>
             </div>
           </div>
 
@@ -324,9 +328,16 @@
             </div>
             <div class="stock-history-controls">
               <div id="purchase-date-filter" class="shared-date-filter"></div>
-              <label class="purchase-history-product-filter"><span>Produit</span><select id="purchase-history-product">
-                  <option value="all">Tous</option>
-                </select></label>
+              <div class="purchase-history-product-filter">
+                <label for="purchase-history-product-search"><span>Produit</span></label>
+                <div class="pertes-product-picker" id="purchase-history-product-picker">
+                  <input id="purchase-history-product-search" type="search" placeholder="Rechercher un produit"
+                    autocomplete="off" />
+                  <button type="button" id="clear-purchase-history-product" class="pertes-product-clear hidden"
+                    aria-label="Effacer le produit">&times;</button>
+                  <div id="purchase-history-product-options" class="pertes-product-options hidden" role="listbox"></div>
+                </div>
+              </div>
             </div>
             <div id="purchase-history-list" class="purchase-history-list" aria-live="polite"></div>
           </section>
@@ -349,21 +360,10 @@
                   <div id="purchase-product-list" class="purchase-product-options" translate="no"></div>
                 </div>
                 <div id="purchase-cart-items" class="purchase-editor-line"></div>
-                <button type="button" id="toggle-new-purchase-product-btn" class="link-btn">+ Nouveau produit</button>
-                <div class="purchase-editor-fields">
-                  <label><span>Fournisseur <small>(facultatif)</small></span><input id="purchase-supplier" type="text"
-                      placeholder="ex. Marché de gros" autocomplete="off" /></label>
-                  <label><span>Date</span><input id="purchase-date" type="date" required /></label>
-                </div>
-                <div id="new-purchase-product-fields" class="new-customer-fields hidden">
-                  <input id="new-purchase-product-name" type="text" placeholder="Nom du nouveau produit" />
-                  <input id="new-purchase-product-price" type="number" min="0" step="0.01"
-                    placeholder="Prix de vente (F CFA)" />
-                  <button type="button" id="create-product-from-purchase" class="secondary-btn">Créer et
-                    ajouter</button>
-                </div>
-                <div class="purchase-editor-total"><span>Total de l’achat</span><strong id="purchase-total-value">0 F
-                    CFA</strong></div>
+                <label class="purchase-quantity-field"><span>Quantité à ajouter</span><input id="purchase-quantity"
+                    type="number" min="1" step="1" value="1" required /></label>
+                <label class="purchase-date-field"><span>Date</span><input id="purchase-date" type="date"
+                    required /></label>
                 <div id="purchase-message" class="message-box"></div>
                 <div class="modal-actions-row"><button type="button" id="cancel-purchase-editor"
                     class="secondary-btn">Annuler</button><button id="complete-purchase-btn"
