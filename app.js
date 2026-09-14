@@ -2531,6 +2531,11 @@ function renderPurchaseProducts() {
   });
 }
 
+function closePurchaseProductOptions() {
+  const container = document.getElementById('purchase-product-list');
+  if (container) container.innerHTML = '';
+}
+
 function addToPurchase(productId) {
   const product = getProductById(productId);
   if (!product) return;
@@ -2822,6 +2827,10 @@ function setupPurchaseListeners() {
     button.addEventListener('click', () => setStockScope(button.dataset.stockScope));
   });
   document.getElementById('purchase-product-search')?.addEventListener('input', renderPurchaseProducts);
+  document.addEventListener('click', (event) => {
+    const selector = document.querySelector('.purchase-selector-block');
+    if (selector && !selector.contains(event.target)) closePurchaseProductOptions();
+  });
   document.getElementById('complete-purchase-btn')?.addEventListener('click', completePurchase);
 }
 
