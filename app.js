@@ -335,6 +335,95 @@ function getDateFilterSummary(filter) {
   return 'Période sélectionnée';
 }
 
+const sharedDatePickerState = {};
+
+function sharedDateFilterMarkup(id) {
+  return `
+    <div class="shared-date-quick" role="group" aria-label="Filtre de date">
+      <button type="button" data-date-quick="today">Aujourd'hui</button>
+      <button type="button" data-date-quick="week">Cette semaine</button>
+      <button type="button" data-date-quick="month">Ce mois</button>
+      <button type="button" class="calendar-icon-btn" data-date-calendar aria-label="Ouvrir le calendrier">📅</button>
+    </div>
+    <div class="shared-date-popover hidden" data-date-popover>
+      <div class="shared-date-calendar-head"><button type="button" data-date-prev aria-label="Mois précédent">‹</button><strong data-date-month></strong><button type="button" data-date-next aria-label="Mois suivant">›</button></div>
+      <div class="shared-date-weekdays"><span>L</span><span>M</span><span>M</span><span>J</span><span>V</span><span>S</span><span>D</span></div>
+      <div class="shared-date-calendar-grid" data-date-grid></div>
+      <div class="shared-date-selection"><span>Début <strong data-date-start>—</strong></span><span>Fin <strong data-date-end>—</strong></span></div>
+      <div class="shared-date-actions"><button type="button" class="primary-btn compact-btn" data-date-apply>Appliquer</button><button type="button" class="link-btn muted" data-date-clear>Effacer</button></div>
+    </div>`;
+}
+
+function sharedDateKey(date) {
+  return toDateInputValue(date);
+}
+
+function sharedDateLabel(value) {
+  return value ? new Date(`${value}T12:00:00`).toLocaleDateString('fr-FR') : '—';
+}
+
+function sharedDatePreset(kind) {
+  const today = new Date();
+  const end = sharedDateKey(today);
+  if (kind === 'today') return { mode: 'day', start: end, end };
+  if (kind === 'month') return { mode: 'range', start: sharedDateKey(new Date(today.getFullYear(), today.getMonth(), 1)), end };
+  const day = (today.getDay() + 6) % 7;
+  const startDate = new Date(today.getFullYear(), today.getMonth(), today.getDate() - day);
+  return { mode: 'range', start: sharedDateKey(startDate), end };
+}
+
+function renderSharedDateCalendar(root, id) {
+  const picker = sharedDatePickerState[id];
+  if (!picker) return;
+  const monthDate = new Date(picker.month + '-01T12:00:00');
+  const firstDay = (monthDate.getDay() + 6) % 7;
+  const days = new Date(monthDate.getFullYear(), monthDate.getMonth() + 1, 0).getDate();
+  const cells = [];
+  for (let index = 0; index < firstDay; index += 1) cells.push('<span class="shared-date-empty"></span>');
+  for (let day = 1; day <= days; day += 1) {
+    const value = sharedDateKey(new Date(monthDate.getFullYear(), monthDate.getMonth(), day));
+    const inRange = picker.start && picker.end && value >= picker.start && value <= picker.end;
+    const selected = value === picker.start || value === picker.end;
+    cells.push(`<button type="button" class="shared-date-day${inRange ? ' in-range' : ''}${selected ? ' selected' : ''}" data-date-day="${value}">${day}</button>`);
+  }
+  root.querySelector('[data-date-month]').textContent = monthDate.toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' });
+  root.querySelector('[data-date-grid]').innerHTML = cells.join('');
+  root.querySelector('[data-date-start]').textContent = sharedDateLabel(picker.start);
+  root.querySelector('[data-date-end]').textContent = sharedDateLabel(picker.end);
+}
+
+function setupSharedDateFilter(root, id, initialFilter, onApply) {
+  if (!root) return;
+  root.innerHTML = sharedDateFilterMarkup(id);
+  const initial = initialFilter || { mode: 'all', start: '', end: '' };
+  const month = (initial.start || initial.end || sharedDateKey(new Date())).slice(0, 7);
+  sharedDatePickerState[id] = { start: initial.start || '', end: initial.end || '', month };
+  const picker = sharedDatePickerState[id];
+  const popover = root.querySelector('[data-date-popover]');
+  const open = () => { popover.classList.remove('hidden'); renderSharedDateCalendar(root, id); };
+  root.querySelector('[data-date-calendar]').addEventListener('click', open);
+  root.querySelectorAll('[data-date-quick]').forEach((button) => button.addEventListener('click', () => onApply(sharedDatePreset(button.dataset.dateQuick))));
+  root.querySelector('[data-date-prev]').addEventListener('click', () => { const date = new Date(`${picker.month}-01T12:00:00`); date.setMonth(date.getMonth() - 1); picker.month = sharedDateKey(date).slice(0, 7); renderSharedDateCalendar(root, id); });
+  root.querySelector('[data-date-next]').addEventListener('click', () => { const date = new Date(`${picker.month}-01T12:00:00`); date.setMonth(date.getMonth() + 1); picker.month = sharedDateKey(date).slice(0, 7); renderSharedDateCalendar(root, id); });
+  root.querySelector('[data-date-grid]').addEventListener('click', (event) => {
+    const button = event.target.closest('[data-date-day]');
+    if (!button) return;
+    const value = button.dataset.dateDay;
+    if (!picker.start || picker.end) { picker.start = value; picker.end = ''; }
+    else if (value < picker.start) { picker.end = picker.start; picker.start = value; }
+    else picker.end = value;
+    renderSharedDateCalendar(root, id);
+  });
+  root.querySelector('[data-date-apply]').addEventListener('click', () => {
+    if (!picker.start) return;
+    onApply({ mode: getDateFilterMode(picker.start, picker.end), start: picker.start, end: picker.end || picker.start });
+    popover.classList.add('hidden');
+  });
+  root.querySelector('[data-date-clear]').addEventListener('click', () => {
+    picker.start = ''; picker.end = ''; onApply({ mode: 'all', start: '', end: '' }); popover.classList.add('hidden');
+  });
+}
+
 function getProductById(productId) {
   return state.products.find((product) => product.id === productId) || null;
 }
@@ -870,21 +959,69 @@ function renderWasteView() {
     const product = item ? getProductById(item.productId) : null;
     const when = new Date(sale.createdAt);
     return `
-      <button type="button" class="history-row perte-row" data-perte-details="${sale.id}">
-        <span class="history-cell date-cell">${when.toLocaleDateString('fr-FR')}</span>
-        <span class="history-cell product-cell">${escapeHtml(product?.name || item?.productName || 'Produit supprimé')}</span>
-        <span class="history-cell qty-cell"><strong>${Number(item?.quantity || 0)}</strong></span>
-        <span class="history-cell reason-cell">${escapeHtml(sale.reason || 'Autre')}</span>
-        <span class="history-row-actions">
-          <span class="link-btn muted">Voir</span>
-        </span>
-      </button>
+      <article class="perte-row" data-perte-details="${sale.id}">
+        <div class="perte-row-main">
+          <div class="perte-row-date"><span class="perte-row-label">Date</span><strong>${when.toLocaleDateString('fr-FR')}</strong></div>
+          <div class="perte-row-product"><span class="perte-row-label">Produit</span><strong>${escapeHtml(product?.name || item?.productName || 'Produit supprimé')}</strong></div>
+          <div class="perte-row-quantity"><span class="perte-row-label">Quantité</span><strong>${Number(item?.quantity || 0)}</strong><small>article${Number(item?.quantity || 0) > 1 ? 's' : ''}</small></div>
+          <div class="perte-row-reason"><span class="perte-row-label">Motif</span><span class="perte-reason-pill">${escapeHtml(sale.reason || 'Autre')}</span></div>
+        </div>
+        <div class="perte-row-actions">
+          <button type="button" class="link-btn" data-perte-view="${sale.id}">Voir</button>
+          <button type="button" class="link-btn" data-perte-edit="${sale.id}">Modifier</button>
+          <button type="button" class="link-btn danger-link" data-perte-delete="${sale.id}">Supprimer</button>
+        </div>
+      </article>
     `;
   }).join('');
 
-  listEl.querySelectorAll('[data-perte-details]').forEach((button) => {
-    button.addEventListener('click', () => openPerteDetails(button.dataset.perteDetails));
+  listEl.querySelectorAll('[data-perte-details]').forEach((row) => {
+    row.addEventListener('click', (event) => {
+      if (event.target.closest('button')) return;
+      openPerteDetails(row.dataset.perteDetails);
+    });
   });
+  listEl.querySelectorAll('[data-perte-view]').forEach((button) => {
+    button.addEventListener('click', () => openPerteDetails(button.dataset.perteView));
+  });
+  listEl.querySelectorAll('[data-perte-edit]').forEach((button) => {
+    button.addEventListener('click', () => openPerteEditor(button.dataset.perteEdit));
+  });
+  listEl.querySelectorAll('[data-perte-delete]').forEach((button) => {
+    button.addEventListener('click', () => deletePerte(button.dataset.perteDelete));
+  });
+}
+
+function renderPerteProductOptions(query = '') {
+  const options = document.getElementById('perte-product-options');
+  const search = document.getElementById('perte-product-search');
+  if (!options || !search) return;
+  const normalizedQuery = query.trim().toLowerCase();
+  const matches = state.products
+    .filter((product) => product.name.toLowerCase().includes(normalizedQuery))
+    .slice(0, 30);
+  options.innerHTML = matches.length
+    ? matches.map((product) => `<button type="button" class="perte-product-option" role="option" data-product-id="${product.id}"><strong>${escapeHtml(product.name)}</strong><small>${Number(product.stock || 0)} en stock</small></button>`).join('')
+    : '<p class="perte-product-empty">Aucun produit trouvé.</p>';
+  options.classList.remove('hidden');
+  search.setAttribute('aria-expanded', 'true');
+}
+
+function closePerteProductOptions() {
+  const options = document.getElementById('perte-product-options');
+  const search = document.getElementById('perte-product-search');
+  options?.classList.add('hidden');
+  search?.setAttribute('aria-expanded', 'false');
+}
+
+function selectPerteProduct(productId) {
+  const product = getProductById(productId);
+  const hiddenInput = document.getElementById('perte-product');
+  const search = document.getElementById('perte-product-search');
+  if (!product || !hiddenInput || !search) return;
+  hiddenInput.value = product.id;
+  search.value = product.name;
+  closePerteProductOptions();
 }
 
 function updatePerteDateFields() {
@@ -922,16 +1059,17 @@ function openPerteEditor(perteId = null) {
   if (!form) return;
   form.reset();
   const productSelect = document.getElementById('perte-product');
+  const productSearch = document.getElementById('perte-product-search');
   const reasonSelect = document.getElementById('perte-reason');
   const dateInput = document.getElementById('perte-date');
   const noteInput = document.getElementById('perte-note');
   const qtyInput = document.getElementById('perte-quantity');
-  productSelect.innerHTML = '<option value="">Sélectionnez un produit</option>' + state.products.map((product) => `<option value="${product.id}">${escapeHtml(product.name)}</option>`).join('');
   reasonSelect.innerHTML = PERTE_REASONS.map((reason) => `<option value="${reason}">${reason}</option>`).join('');
   if (sale) {
     const item = sale.items?.[0];
     const productId = item?.productId || '';
     productSelect.value = productId;
+    productSearch.value = item?.productName || getProductById(productId)?.name || '';
     qtyInput.value = item?.quantity || 1;
     reasonSelect.value = sale.reason || 'Autre';
     dateInput.value = sale.createdAt ? toDateInputValue(new Date(sale.createdAt)) : toDateInputValue(new Date());
@@ -940,6 +1078,7 @@ function openPerteEditor(perteId = null) {
     document.getElementById('perte-submit-btn').textContent = 'Enregistrer';
   } else {
     productSelect.value = '';
+    productSearch.value = '';
     qtyInput.value = 1;
     reasonSelect.value = 'Produit périmé';
     dateInput.value = toDateInputValue(new Date());
@@ -949,7 +1088,7 @@ function openPerteEditor(perteId = null) {
   }
   document.getElementById('perte-form-message').textContent = '';
   document.getElementById('perte-editor-modal').classList.remove('hidden');
-  productSelect.focus();
+  productSearch.focus();
 }
 
 function closePerteEditor() {
@@ -1572,32 +1711,6 @@ function renderClientProfilePage(container, customer) {
   const purchaseFilterLabel = getDateFilterSummary(customerPurchaseSummaryFilter);
   const historyFilterLabel = getDateFilterSummary(customerTransactionHistoryFilter);
 
-  const purchaseSummaryPicker = `
-    <div class="compact-date-popover hidden" data-purchase-summary-picker>
-      <div class="compact-date-picker-grid">
-        <label>Du<input type="date" data-purchase-summary-start value="${customerPurchaseSummaryFilter.start || ''}" /></label>
-        <label>Au<input type="date" data-purchase-summary-end value="${customerPurchaseSummaryFilter.end || ''}" /></label>
-      </div>
-      <div class="compact-date-picker-actions">
-        <button type="button" class="primary-btn compact-btn" data-apply-purchase-summary>Appliquer</button>
-        <button type="button" class="link-btn muted" data-clear-purchase-summary>Effacer</button>
-      </div>
-    </div>
-  `;
-
-  const historyPicker = `
-    <div class="compact-date-popover hidden" data-history-picker>
-      <div class="compact-date-picker-grid">
-        <label>Du<input type="date" data-history-start value="${customerTransactionHistoryFilter.start || ''}" /></label>
-        <label>Au<input type="date" data-history-end value="${customerTransactionHistoryFilter.end || ''}" /></label>
-      </div>
-      <div class="compact-date-picker-actions">
-        <button type="button" class="primary-btn compact-btn" data-apply-history>Appliquer</button>
-        <button type="button" class="link-btn muted" data-clear-history>Effacer</button>
-      </div>
-    </div>
-  `;
-
   container.innerHTML = `
     <div class="ledger-page">
       <div class="ledger-page-header">
@@ -1611,11 +1724,8 @@ function renderClientProfilePage(container, customer) {
         <div><p class="section-kicker">Profil client</p><h3>${escapeHtml(customer.name)}</h3><span class="subtle">${escapeHtml(customer.phone)}${customer.address ? ` · ${escapeHtml(customer.address)}` : ''}</span></div>
         <div class="ledger-entity-stats">
           <div class="customer-summary-card">
-            <div class="customer-summary-header">
-              <span>Total acheté</span>
-              <button type="button" class="calendar-icon-btn" data-purchase-summary-toggle aria-label="Choisir une période pour le total acheté">📅</button>
-            </div>
-            ${purchaseSummaryPicker}
+            <div class="customer-summary-header"><span>Total acheté</span></div>
+            <div data-purchase-summary-filter class="shared-date-filter"></div>
             <strong class="customer-summary-total">${formatMoney(purchaseSummaryTotal)}</strong>
           </div>
           <div class="customer-summary-card${owed > 0 ? ' customer-summary-card-owed' : ''}">
@@ -1627,8 +1737,7 @@ function renderClientProfilePage(container, customer) {
       <div class="ledger-section-heading">
         <h4>Historique des transactions</h4>
         <div class="ledger-history-filter-wrap">
-          <button type="button" class="calendar-icon-btn" data-history-toggle aria-label="Choisir une période pour l’historique des transactions">📅</button>
-          ${historyPicker}
+          <div data-history-filter class="shared-date-filter"></div>
           <span>${plural(transactionHistoryRows.length, 'transaction')}</span>
         </div>
       </div>
@@ -1641,47 +1750,18 @@ function renderClientProfilePage(container, customer) {
     </div>
   `;
 
+  setupSharedDateFilter(container.querySelector('[data-purchase-summary-filter]'), 'customer-purchase-summary', customerPurchaseSummaryFilter, (filter) => {
+    customerPurchaseSummaryFilter = filter;
+    renderClientProfilePage(container, customer);
+  });
+  setupSharedDateFilter(container.querySelector('[data-history-filter]'), 'customer-history', customerTransactionHistoryFilter, (filter) => {
+    customerTransactionHistoryFilter = filter;
+    renderClientProfilePage(container, customer);
+  });
+
   container.querySelector('[data-client-back]')?.addEventListener('click', () => navigateClient('/clients'));
   container.querySelector('[data-edit-client]')?.addEventListener('click', () => beginEditCustomer(customer.id));
   container.querySelector('[data-delete-client]')?.addEventListener('click', () => deleteCustomer(customer));
-  container.querySelector('[data-purchase-summary-toggle]')?.addEventListener('click', () => {
-    container.querySelector('[data-purchase-summary-picker]')?.classList.toggle('hidden');
-  });
-  container.querySelector('[data-history-toggle]')?.addEventListener('click', () => {
-    container.querySelector('[data-history-picker]')?.classList.toggle('hidden');
-  });
-  container.querySelector('[data-apply-purchase-summary]')?.addEventListener('click', () => {
-    const start = container.querySelector('[data-purchase-summary-start]')?.value || '';
-    const end = container.querySelector('[data-purchase-summary-end]')?.value || '';
-    customerPurchaseSummaryFilter = {
-      mode: getDateFilterMode(start, end),
-      start,
-      end
-    };
-    container.querySelector('[data-purchase-summary-picker]')?.classList.add('hidden');
-    renderClientProfilePage(container, customer);
-  });
-  container.querySelector('[data-clear-purchase-summary]')?.addEventListener('click', () => {
-    customerPurchaseSummaryFilter = { mode: 'all', start: '', end: '' };
-    container.querySelector('[data-purchase-summary-picker]')?.classList.add('hidden');
-    renderClientProfilePage(container, customer);
-  });
-  container.querySelector('[data-apply-history]')?.addEventListener('click', () => {
-    const start = container.querySelector('[data-history-start]')?.value || '';
-    const end = container.querySelector('[data-history-end]')?.value || '';
-    customerTransactionHistoryFilter = {
-      mode: getDateFilterMode(start, end),
-      start,
-      end
-    };
-    container.querySelector('[data-history-picker]')?.classList.add('hidden');
-    renderClientProfilePage(container, customer);
-  });
-  container.querySelector('[data-clear-history]')?.addEventListener('click', () => {
-    customerTransactionHistoryFilter = { mode: 'all', start: '', end: '' };
-    container.querySelector('[data-history-picker]')?.classList.add('hidden');
-    renderClientProfilePage(container, customer);
-  });
   container.querySelectorAll('[data-client-invoice-id]').forEach((button) => button.addEventListener('click', () => navigateClient(`/clients/${encodeURIComponent(customer.id)}/invoices/${encodeURIComponent(button.dataset.clientInvoiceId)}`)));
 }
 
@@ -3031,6 +3111,17 @@ function exportReportPdf() {
 }
 
 function setupReportListeners() {
+  setupSharedDateFilter(document.getElementById('report-shared-date-filter'), 'report', {
+    mode: reportFilters.mode,
+    start: reportFilters.mode === 'day' ? reportFilters.day : reportFilters.start,
+    end: reportFilters.mode === 'day' ? reportFilters.day : reportFilters.end
+  }, (filter) => {
+    reportFilters.mode = filter.mode === 'day' ? 'day' : 'range';
+    reportFilters.day = filter.start;
+    reportFilters.start = filter.start;
+    reportFilters.end = filter.end;
+    renderReports();
+  });
   const day = document.getElementById('report-day');
   if (day) {
     day.value = toDateInputValue(new Date());
@@ -3082,6 +3173,7 @@ const EXPENSE_TYPES = [
 let editingExpenseId = null;
 let viewingExpenseId = null;
 let pendingDeleteExpenseId = null;
+let expenseDateFilter = { mode: 'all', start: '', end: '' };
 
 // Dates are stored as the YYYY-MM-DD the date input produces, so comparisons are
 // plain string comparisons and no timezone can shift a day.
@@ -3200,6 +3292,17 @@ async function confirmExpenseDelete() {
 }
 
 function setupExpenseListeners() {
+  setupSharedDateFilter(document.getElementById('expense-shared-date-filter'), 'expenses', expenseDateFilter, (filter) => {
+    expenseDateFilter = filter;
+    document.getElementById('expense-filter-day').value = filter.mode === 'day' ? filter.start : '';
+    document.getElementById('expense-filter-start').value = filter.start;
+    document.getElementById('expense-filter-end').value = filter.end;
+    document.querySelectorAll('[data-expense-mode]').forEach((button) => {
+      const active = filter.mode === 'all' ? button.dataset.expenseMode === 'all' : button.dataset.expenseMode === (filter.mode === 'day' ? 'day' : 'range');
+      button.classList.toggle('active', active);
+      button.setAttribute('aria-pressed', String(active));
+    });
+  });
   document.getElementById('add-expense-btn').addEventListener('click', () => openExpenseEditor(null));
   document.getElementById('expense-form').addEventListener('submit', handleExpenseSubmit);
   document.getElementById('cancel-expense-edit').addEventListener('click', closeExpenseEditor);
@@ -3247,6 +3350,25 @@ function setupEventListeners() {
   document.getElementById('pertes-product-filter')?.addEventListener('change', (event) => {
     pertesFilters.productId = event.target.value;
     renderWasteView();
+  });
+  setupSharedDateFilter(document.getElementById('pertes-date-filter'), 'pertes', pertesFilters, (filter) => {
+    pertesFilters = { ...pertesFilters, ...filter };
+    renderWasteView();
+  });
+  document.getElementById('perte-product-search')?.addEventListener('focus', (event) => {
+    renderPerteProductOptions(event.target.value);
+  });
+  document.getElementById('perte-product-search')?.addEventListener('input', (event) => {
+    document.getElementById('perte-product').value = '';
+    renderPerteProductOptions(event.target.value);
+  });
+  document.getElementById('perte-product-options')?.addEventListener('click', (event) => {
+    const option = event.target.closest('[data-product-id]');
+    if (option) selectPerteProduct(option.dataset.productId);
+  });
+  document.addEventListener('click', (event) => {
+    const picker = document.getElementById('perte-product-picker');
+    if (picker && !picker.contains(event.target)) closePerteProductOptions();
   });
   document.querySelector('[data-pertes-reset]')?.addEventListener('click', resetPerteFilters);
   document.getElementById('pertes-date-toggle')?.addEventListener('click', () => {

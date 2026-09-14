@@ -951,6 +951,60 @@ textarea {
   font-weight: inherit;
 }
 
+.perte-product-picker {
+  position: relative;
+}
+
+.perte-product-picker input[type="search"] {
+  padding-right: 38px;
+}
+
+.perte-product-options {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  max-height: 250px;
+  overflow-y: auto;
+  padding: 6px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+  box-shadow: var(--shadow);
+}
+
+.perte-product-option {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  width: 100%;
+  padding: 10px 11px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.perte-product-option:hover,
+.perte-product-option:focus-visible {
+  background: var(--accent-panel);
+  outline: none;
+}
+
+.perte-product-option small {
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.perte-product-empty {
+  margin: 8px;
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
 .editor-section {
   display: flex;
   flex-direction: column;
@@ -2554,7 +2608,7 @@ textarea {
      long catalogue pushed blank sheets out after the invoice. Taking everything
      out of layout and putting back only the sheet being printed is what keeps an
      invoice to the pages it actually needs. */
-  body > * {
+  body>* {
     display: none !important;
   }
 
@@ -2948,6 +3002,92 @@ textarea {
   box-shadow: var(--shadow);
 }
 
+.history-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.perte-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  width: 100%;
+  padding: 15px 16px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+  box-shadow: 0 3px 12px rgba(20, 55, 38, 0.04);
+  transition: border-color 0.15s ease, background 0.15s ease, transform 0.15s ease;
+}
+
+.perte-row:hover {
+  border-color: var(--accent-line);
+  background: var(--accent-panel);
+  transform: translateY(-1px);
+}
+
+.perte-row-main {
+  display: grid;
+  grid-template-columns: minmax(92px, 0.8fr) minmax(170px, 1.5fr) minmax(76px, 0.55fr) minmax(130px, 0.9fr);
+  align-items: center;
+  gap: 22px;
+  min-width: 0;
+  flex: 1;
+}
+
+.perte-row-main>div {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.perte-row-label {
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.perte-row-product strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.perte-row-quantity strong {
+  font-size: 1.05rem;
+}
+
+.perte-row-quantity small {
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+.perte-reason-pill {
+  width: fit-content;
+  max-width: 100%;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+  font-size: 0.76rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.perte-row-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
 
 .ledger-page-header,
 .ledger-entity-header,
@@ -3330,6 +3470,43 @@ textarea {
 @media (max-width: 760px) {
   .ledger-page {
     padding: 18px 14px;
+  }
+
+  .shared-date-quick {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .shared-date-quick>button:not(.calendar-icon-btn) {
+    flex: 1;
+    padding-inline: 7px;
+    font-size: 0.7rem;
+  }
+
+  .shared-date-popover {
+    left: 0;
+  }
+
+  .perte-row {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 12px;
+    padding: 13px;
+  }
+
+  .perte-row-main {
+    grid-template-columns: 1fr 1fr;
+    gap: 12px 16px;
+  }
+
+  .perte-row-actions {
+    justify-content: flex-start;
+    padding-top: 10px;
+    border-top: 1px solid var(--line);
+  }
+
+  .perte-product-options {
+    max-height: 210px;
   }
 
   .customer-ledger-row {
@@ -4188,6 +4365,148 @@ body.is-loading .main-panel {
   margin-bottom: 16px;
 }
 
+.shared-date-filter {
+  position: relative;
+  width: fit-content;
+  max-width: 100%;
+}
+
+.shared-date-quick {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--panel-soft);
+}
+
+.shared-date-quick>button:not(.calendar-icon-btn) {
+  min-height: 32px;
+  padding: 6px 12px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 0.76rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.shared-date-quick>button:not(.calendar-icon-btn):hover {
+  background: var(--panel);
+  color: var(--text);
+}
+
+.shared-date-quick .calendar-icon-btn {
+  border: 0;
+  border-radius: 999px;
+  background: var(--accent-soft);
+}
+
+.shared-date-popover {
+  position: absolute;
+  z-index: 30;
+  top: calc(100% + 8px);
+  left: 0;
+  width: min(320px, calc(100vw - 32px));
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel);
+  box-shadow: var(--shadow);
+}
+
+.shared-date-calendar-head,
+.shared-date-selection,
+.shared-date-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.shared-date-calendar-head button {
+  width: 30px;
+  height: 30px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--panel-soft);
+  color: var(--text);
+  font-size: 1.2rem;
+  line-height: 1;
+}
+
+.shared-date-calendar-head strong {
+  text-transform: capitalize;
+}
+
+.shared-date-weekdays,
+.shared-date-calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 3px;
+}
+
+.shared-date-weekdays {
+  margin: 14px 0 5px;
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-align: center;
+}
+
+.shared-date-day {
+  min-height: 32px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  font-size: 0.78rem;
+}
+
+.shared-date-day:hover {
+  background: var(--accent-soft);
+}
+
+.shared-date-day.in-range {
+  border-radius: 0;
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+
+.shared-date-day.selected {
+  position: relative;
+  z-index: 1;
+  border-radius: 50%;
+  background: #2563eb;
+  color: white;
+  font-weight: 800;
+}
+
+.shared-date-empty {
+  min-height: 32px;
+}
+
+.shared-date-selection {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+.shared-date-selection strong {
+  display: block;
+  margin-top: 2px;
+  color: var(--text);
+  font-size: 0.78rem;
+}
+
+.shared-date-actions {
+  margin-top: 12px;
+}
+
 .report-mode-toggle {
   display: inline-flex;
   gap: 6px;
@@ -4361,12 +4680,35 @@ body.is-loading .main-panel {
 }
 
 /* One colour per movement, so a column of pills reads at a glance. */
-.report-pill-sale { background: #e8f4e8; color: #1f6a38; }
-.report-pill-purchase { background: #e6effa; color: #1d4e89; }
-.report-pill-return { background: #fdf0e1; color: #92400e; }
-.report-pill-waste { background: #fae8e8; color: #a3231b; }
-.report-pill-expense { background: #f1ecf9; color: #573b8c; }
-.report-pill-adjustment { background: #eceff1; color: #4a5b63; }
+.report-pill-sale {
+  background: #e8f4e8;
+  color: #1f6a38;
+}
+
+.report-pill-purchase {
+  background: #e6effa;
+  color: #1d4e89;
+}
+
+.report-pill-return {
+  background: #fdf0e1;
+  color: #92400e;
+}
+
+.report-pill-waste {
+  background: #fae8e8;
+  color: #a3231b;
+}
+
+.report-pill-expense {
+  background: #f1ecf9;
+  color: #573b8c;
+}
+
+.report-pill-adjustment {
+  background: #eceff1;
+  color: #4a5b63;
+}
 
 /* The printable sheet: built on demand, off-screen until the print job runs. */
 .report-print-sheet {
@@ -4577,7 +4919,7 @@ body.is-loading .main-panel {
 
 /* A wide page holding one table row reads as unfinished, so the content stops
    before the screen does. */
-.main-panel > .tab-panel {
+.main-panel>.tab-panel {
   max-width: 1140px;
 }
 
@@ -4648,8 +4990,8 @@ body.is-loading .main-panel {
   transition: opacity 0.12s ease;
 }
 
-tr:hover > .row-actions .link-btn,
-tr:focus-within > .row-actions .link-btn {
+tr:hover>.row-actions .link-btn,
+tr:focus-within>.row-actions .link-btn {
   opacity: 1;
 }
 

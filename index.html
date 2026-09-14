@@ -275,16 +275,7 @@
 
         <div id="stock-pertes" class="stock-view hidden">
           <div class="card report-controls">
-            <div class="report-mode-toggle" role="group" aria-label="Filtre des pertes">
-              <button type="button" id="pertes-date-toggle" class="secondary-btn compact-btn"
-                aria-label="Filtrer par date">📅</button>
-              <button type="button" class="scope-btn active" data-pertes-reset aria-pressed="true">Tout</button>
-            </div>
-            <div id="pertes-date-panel" class="report-date-fields hidden">
-              <label><span>Du</span><input type="date" id="pertes-date-start" /></label>
-              <label><span>Au</span><input type="date" id="pertes-date-end" /></label>
-              <button type="button" id="pertes-reset-date" class="link-btn muted">Effacer</button>
-            </div>
+            <div id="pertes-date-filter" class="shared-date-filter" data-date-filter="pertes"></div>
             <div class="report-category-field">
               <label for="pertes-product-filter"><span>Produit</span></label>
               <select id="pertes-product-filter">
@@ -395,14 +386,14 @@
         </header>
 
         <div class="card report-controls">
-          <div class="report-mode-toggle" role="group" aria-label="Période des dépenses">
+          <div class="report-mode-toggle shared-date-legacy hidden" role="group" aria-label="Période des dépenses">
             <button type="button" class="pos-mode-btn" data-expense-mode="day" aria-pressed="false">Par jour</button>
             <button type="button" class="pos-mode-btn" data-expense-mode="range" aria-pressed="false">Par
               période</button>
             <button type="button" class="pos-mode-btn active" data-expense-mode="all" aria-pressed="true">Tout</button>
           </div>
 
-          <div class="report-date-fields">
+          <div class="report-date-fields shared-date-legacy hidden">
             <label id="expense-day-field" class="hidden"><span>Date</span><input type="date"
                 id="expense-filter-day" /></label>
             <label id="expense-start-field" class="hidden"><span>Du</span><input type="date"
@@ -410,6 +401,7 @@
             <label id="expense-end-field" class="hidden"><span>Au</span><input type="date"
                 id="expense-filter-end" /></label>
           </div>
+          <div id="expense-shared-date-filter" class="shared-date-filter"></div>
 
           <div class="report-category-field">
             <span class="report-field-label">Type</span>
@@ -436,18 +428,19 @@
         </header>
 
         <div class="card report-controls">
-          <div class="report-mode-toggle" role="group" aria-label="Période du rapport">
+          <div class="report-mode-toggle shared-date-legacy hidden" role="group" aria-label="Période du rapport">
             <button type="button" class="pos-mode-btn active" data-report-mode="day" aria-pressed="true">Par
               jour</button>
             <button type="button" class="pos-mode-btn" data-report-mode="range" aria-pressed="false">Par
               période</button>
           </div>
 
-          <div class="report-date-fields">
+          <div class="report-date-fields shared-date-legacy hidden">
             <label id="report-day-field"><span>Date</span><input type="date" id="report-day" /></label>
             <label id="report-start-field" class="hidden"><span>Du</span><input type="date" id="report-start" /></label>
             <label id="report-end-field" class="hidden"><span>Au</span><input type="date" id="report-end" /></label>
           </div>
+          <div id="report-shared-date-filter" class="shared-date-filter"></div>
 
           <div class="report-customer-field">
             <label for="report-customer">Client</label>
@@ -497,7 +490,12 @@
       <form id="perte-form" class="stack-form">
         <label>
           <span>Produit</span>
-          <select id="perte-product" required></select>
+          <div class="perte-product-picker" id="perte-product-picker">
+            <input id="perte-product" type="hidden" required />
+            <input id="perte-product-search" type="search" placeholder="Rechercher un produit..." autocomplete="off"
+              aria-label="Rechercher un produit" aria-controls="perte-product-options" aria-expanded="false" />
+            <div id="perte-product-options" class="perte-product-options hidden" role="listbox"></div>
+          </div>
         </label>
         <label>
           <span>Quantité</span>
