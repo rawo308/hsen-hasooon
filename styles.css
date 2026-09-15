@@ -5407,6 +5407,66 @@ tr:focus-within>.row-actions .link-btn {
   max-height: min(42vh, 420px);
 }
 
+/* Final compact profile rhythm. Keep both customer metrics in equal columns
+   and keep the purchase amount directly under its date control. */
+.ledger-entity-stats {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(180px, 1fr));
+  align-items: start;
+  gap: 28px;
+  min-width: 390px;
+}
+
+.customer-summary-card {
+  min-width: 0;
+  text-align: left;
+}
+
+.customer-summary-header {
+  justify-content: flex-start;
+  margin-bottom: 7px;
+}
+
+.customer-summary-value-row {
+  display: grid;
+  justify-items: start;
+  gap: 8px;
+}
+
+.customer-summary-value-row .customer-summary-total {
+  margin: 0;
+}
+
+.shared-date-popover {
+  width: 248px;
+  max-height: none;
+  overflow: visible;
+  padding: 8px;
+}
+
+.shared-date-calendar-head button {
+  width: 27px;
+  height: 27px;
+}
+
+.shared-date-weekdays {
+  margin-top: 7px;
+}
+
+.shared-date-day,
+.shared-date-empty {
+  min-height: 24px;
+}
+
+.shared-date-selection {
+  margin-top: 6px;
+  padding-top: 6px;
+}
+
+.shared-date-actions {
+  margin-top: 6px;
+}
+
 @media (max-width: 760px) {
   .ledger-entity-header {
     grid-template-columns: 1fr;
@@ -5418,6 +5478,7 @@ tr:focus-within>.row-actions .link-btn {
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 14px;
+    min-width: 0;
   }
 
   .customer-summary-card {
