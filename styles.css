@@ -1641,19 +1641,6 @@ textarea {
   margin: 0;
 }
 
-.history-date-filter {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.history-date-filter input[type="date"] {
-  width: auto;
-  padding: 7px 10px;
-  font-size: 0.8rem;
-  border-color: var(--accent-line);
-}
-
 .debt-history-section {
   margin-top: 18px;
 }
