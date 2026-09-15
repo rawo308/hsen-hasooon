@@ -160,6 +160,125 @@ p {
   margin-bottom: 22px;
 }
 
+.dashboard-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 22px;
+}
+
+.dashboard-stat-card {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  padding: 14px 15px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+}
+
+.dashboard-stat-card>span {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.dashboard-stat-card strong {
+  font-size: 1.24rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.dashboard-stat-card small,
+.dashboard-transaction-row small {
+  color: var(--muted);
+  font-size: 0.76rem;
+}
+
+.dashboard-history-section {
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel);
+}
+
+.dashboard-section-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.dashboard-section-heading h3 {
+  margin: 0;
+  font-size: 1.08rem;
+}
+
+.dashboard-section-heading .section-kicker {
+  margin-bottom: 4px;
+}
+
+.dashboard-history-list {
+  max-height: min(48vh, 430px);
+  overflow-y: auto;
+  border-top: 1px solid var(--line);
+}
+
+.dashboard-transaction-row {
+  display: grid;
+  grid-template-columns: minmax(145px, 1.1fr) minmax(130px, 1fr) minmax(110px, auto) minmax(110px, auto) auto;
+  align-items: center;
+  width: 100%;
+  gap: 12px;
+  padding: 11px 3px;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+}
+
+.dashboard-transaction-row:hover,
+.dashboard-transaction-row:focus-visible {
+  background: var(--panel-soft);
+  outline: none;
+}
+
+.dashboard-transaction-row>span {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.dashboard-transaction-row>strong {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.dashboard-transaction-type,
+.dashboard-transaction-status {
+  color: var(--success);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.dashboard-transaction-type.is-return {
+  color: var(--warning);
+}
+
+.dashboard-transaction-action {
+  color: var(--accent);
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.dashboard-empty {
+  margin: 0;
+  padding: 24px 4px 8px;
+  color: var(--muted);
+}
+
 .stat-card {
   background: var(--panel);
   border: 1px solid var(--line);
@@ -3438,40 +3557,6 @@ textarea {
   font-size: 0.9rem;
 }
 
-.compact-date-popover {
-  position: absolute;
-  z-index: 10;
-  right: 0;
-  top: calc(100% + 10px);
-  min-width: 240px;
-  padding: 12px;
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  background: var(--panel);
-  box-shadow: var(--shadow);
-}
-
-.compact-date-picker-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 10px;
-  margin-bottom: 10px;
-}
-
-.compact-date-picker-grid label {
-  display: grid;
-  gap: 4px;
-  color: var(--muted);
-  font-size: 0.72rem;
-}
-
-.compact-date-picker-actions {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 8px;
-}
-
 .ledger-section-heading h4,
 .ledger-payment-history h4 {
   margin: 0;
@@ -4178,7 +4263,7 @@ body.is-loading .main-panel {
 /* --- POS Vente / Retour mode ---------------------------------------------- */
 .pos-mode-toggle {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(2, 1fr);
   gap: 4px;
   margin-bottom: 14px;
   padding: 4px;
@@ -4831,6 +4916,35 @@ body.is-loading .main-panel {
   text-transform: capitalize;
 }
 
+.report-totals {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 220px));
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.report-total {
+  display: grid;
+  gap: 6px;
+  padding: 13px 15px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+}
+
+.report-total span {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.report-total strong {
+  font-size: 1.18rem;
+  font-variant-numeric: tabular-nums;
+}
+
 .report-tiles {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(205px, 1fr));
@@ -4884,7 +4998,7 @@ body.is-loading .main-panel {
 }
 
 .report-table-wrap {
-  max-height: min(56vh, 520px);
+  max-height: min(58vh, 560px);
   overflow: auto;
 }
 
@@ -4895,7 +5009,7 @@ body.is-loading .main-panel {
 
 .report-table th,
 .report-table td {
-  padding: 10px 12px;
+  padding: 9px 11px;
   border-bottom: 1px solid var(--line);
   text-align: left;
   font-size: 0.85rem;
@@ -5718,4 +5832,30 @@ tr:focus-within>.row-actions .link-btn {
 
 .ledger-invoice-list {
   margin-top: 0;
+}
+
+@media (max-width: 620px) {
+  .dashboard-summary-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .dashboard-history-section {
+    padding: 14px;
+  }
+
+  .dashboard-history-list {
+    overflow-x: auto;
+  }
+
+  .dashboard-transaction-row {
+    min-width: 620px;
+  }
+
+  .report-totals {
+    grid-template-columns: 1fr;
+  }
+
+  .report-table {
+    min-width: 720px;
+  }
 }

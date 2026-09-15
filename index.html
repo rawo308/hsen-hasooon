@@ -21,7 +21,8 @@
       </div>
 
       <nav class="nav-menu">
-        <button class="nav-btn active" data-tab="pos">Caisse</button>
+        <button class="nav-btn active" data-tab="dashboard">Accueil</button>
+        <button class="nav-btn" data-tab="pos">Caisse</button>
         <button class="nav-btn" data-tab="stock">Stock</button>
         <button class="nav-btn" data-tab="customers">Clients</button>
         <button class="nav-btn" data-tab="reports">Rapports</button>
@@ -31,7 +32,29 @@
     </aside>
 
     <main class="main-panel">
-      <section id="pos" class="tab-panel active">
+      <section id="dashboard" class="tab-panel active">
+        <header class="panel-header dashboard-header">
+          <div>
+            <p class="eyebrow">Vue d'ensemble</p>
+            <h2>Accueil</h2>
+            <p class="page-subtitle">Les chiffres essentiels du jour.</p>
+          </div>
+        </header>
+
+        <div id="dashboard-summary" class="dashboard-summary-grid"></div>
+        <section class="dashboard-history-section" aria-labelledby="dashboard-history-title">
+          <div class="dashboard-section-heading">
+            <div>
+              <p class="section-kicker">Activité récente</p>
+              <h3 id="dashboard-history-title">Dernières ventes</h3>
+            </div>
+            <button type="button" class="link-btn" data-dashboard-reports>Voir les rapports</button>
+          </div>
+          <div id="dashboard-history" class="dashboard-history-list" aria-live="polite"></div>
+        </section>
+      </section>
+
+      <section id="pos" class="tab-panel">
         <header class="panel-header pos-page-header">
           <div>
             <p class="eyebrow">Point de vente</p>
@@ -376,8 +399,7 @@
           <div>
             <p class="eyebrow">Suivi interne</p>
             <h2>Rapports</h2>
-            <p class="page-subtitle">Tous les mouvements d’une journée ou d’une période : ventes, achats, retours et
-              pertes.</p>
+            <p class="page-subtitle">Ventes et retours sur une journée ou une période.</p>
           </div>
           <div class="report-header-actions">
             <button type="button" id="export-report-btn" class="secondary-btn">Exporter en PDF</button>
@@ -385,18 +407,6 @@
         </header>
 
         <div class="card report-controls">
-          <div class="report-mode-toggle shared-date-legacy hidden" role="group" aria-label="Période du rapport">
-            <button type="button" class="pos-mode-btn active" data-report-mode="day" aria-pressed="true">Par
-              jour</button>
-            <button type="button" class="pos-mode-btn" data-report-mode="range" aria-pressed="false">Par
-              période</button>
-          </div>
-
-          <div class="report-date-fields shared-date-legacy hidden">
-            <label id="report-day-field"><span>Date</span><input type="date" id="report-day" /></label>
-            <label id="report-start-field" class="hidden"><span>Du</span><input type="date" id="report-start" /></label>
-            <label id="report-end-field" class="hidden"><span>Au</span><input type="date" id="report-end" /></label>
-          </div>
           <div id="report-shared-date-filter" class="shared-date-filter"></div>
 
           <div class="report-customer-field">
@@ -406,21 +416,13 @@
           </div>
 
           <div class="report-category-field">
-            <span class="report-field-label">Catégorie</span>
-            <div class="report-categories" role="group" aria-label="Catégorie">
+            <span class="report-field-label">Type</span>
+            <div class="report-categories" role="group" aria-label="Type de transaction">
               <button type="button" class="report-chip active" data-report-category="all"
                 aria-pressed="true">Tout</button>
-              <button type="button" class="report-chip" data-report-category="money"
-                aria-pressed="false">Argent</button>
               <button type="button" class="report-chip" data-report-category="sale" aria-pressed="false">Ventes</button>
-              <button type="button" class="report-chip" data-report-category="purchase"
-                aria-pressed="false">Achats</button>
               <button type="button" class="report-chip" data-report-category="return"
                 aria-pressed="false">Retours</button>
-              <button type="button" class="report-chip" data-report-category="waste"
-                aria-pressed="false">Pertes</button>
-              <button type="button" class="report-chip" data-report-category="adjustment"
-                aria-pressed="false">Ajustements</button>
             </div>
           </div>
         </div>

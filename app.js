@@ -17,17 +17,13 @@ const emptyState = {
 
 const state = structuredClone(emptyState);
 let cart = [];
-let selectedCustomerProfile = null;
 let selectedCustomerInvoiceId = null;
 let selectedDebtCustomerId = null;
 let selectedDebtInvoiceId = null;
 let selectedPosCustomerId = null;
 let editingProductId = null;
 let editingCustomerId = null;
-let customerPurchaseRange = '30d';
-let customerPurchaseCustomRange = { start: '', end: '' };
-let customerPurchaseSummaryFilter = { mode: 'all', start: '', end: '' };
-let customerTransactionHistoryFilter = { mode: 'all', start: '', end: '' };
+let customerDateFilter = { mode: 'all', start: '', end: '' };
 let saleDiscountPercent = 0;
 let pertesFilters = { mode: 'all', start: '', end: '' };
 let editingPerteId = null;
@@ -247,41 +243,6 @@ function showMessage(elementId, text, type = 'info') {
 
 function getCustomerById(customerId) {
   return state.customers.find((customer) => customer.id === customerId) || null;
-}
-
-function getCustomerPurchaseStart(range) {
-  const start = new Date();
-  start.setHours(0, 0, 0, 0);
-  start.setDate(start.getDate() - (range === 'today' ? 0 : range === '7d' ? 6 : 29));
-  return start;
-}
-
-function getCustomerPurchaseRangeBounds(range) {
-  if (range === 'custom') {
-    const startValue = customerPurchaseCustomRange.start;
-    const endValue = customerPurchaseCustomRange.end;
-    if (!startValue || !endValue) {
-      return { start: null, end: null };
-    }
-    const start = getStartOfDay(new Date(startValue));
-    const end = new Date(endValue);
-    end.setHours(23, 59, 59, 999);
-    return { start, end };
-  }
-  const start = getCustomerPurchaseStart(range);
-  const end = new Date();
-  return { start, end };
-}
-
-function getCustomerPurchasesForRange(customerId, range) {
-  const { start, end } = getCustomerPurchaseRangeBounds(range);
-  if (!start || !end) return [];
-  return state.sales
-    .filter((sale) => sale.customerId === customerId && isCustomerSale(sale))
-    .filter((sale) => {
-      const date = new Date(sale.createdAt);
-      return date >= start && date <= end;
-    });
 }
 
 function getDateFilterMode(startValue, endValue) {
@@ -1028,35 +989,6 @@ function selectPerteProduct(productId) {
   closePerteProductOptions();
 }
 
-function updatePerteDateFields() {
-  const panel = document.getElementById('pertes-date-panel');
-  const start = document.getElementById('pertes-date-start');
-  const end = document.getElementById('pertes-date-end');
-  if (!panel) return;
-  const visible = !panel.classList.contains('hidden');
-  if (!visible) {
-    pertesFilters.mode = 'all';
-    pertesFilters.start = '';
-    pertesFilters.end = '';
-    if (start) start.value = '';
-    if (end) end.value = '';
-  }
-  renderWasteView();
-}
-
-function resetPerteFilters() {
-  pertesFilters = { mode: 'all', start: '', end: '', productId: 'all' };
-  const productSearch = document.getElementById('pertes-product-search');
-  if (productSearch) productSearch.value = '';
-  document.getElementById('clear-pertes-product')?.classList.add('hidden');
-  document.getElementById('pertes-date-panel')?.classList.add('hidden');
-  const start = document.getElementById('pertes-date-start');
-  const end = document.getElementById('pertes-date-end');
-  if (start) start.value = '';
-  if (end) end.value = '';
-  renderWasteView();
-}
-
 function renderPerteHistoryProductOptions(query = '') {
   const options = document.getElementById('pertes-product-options');
   const input = document.getElementById('pertes-product-search');
@@ -1443,230 +1375,69 @@ function cancelCustomerEdit() {
   document.getElementById('customer-editor-modal')?.classList.add('hidden');
 }
 
-function showCustomerProfile(customerId) {
-  const customer = getCustomerById(customerId);
-  if (!customer) return;
-  selectedCustomerProfile = customer;
-  const allSalesForCustomer = [...state.sales.filter((sale) => sale.customerId === customer.id)].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-  const rangedPurchases = getCustomerPurchasesForRange(customer.id, customerPurchaseRange);
-  const rangedPurchaseTotal = rangedPurchases.reduce((sum, sale) => sum + Number(sale.totalAmount || 0), 0);
-  const salesForCustomer = customerHistoryDateFilter
-    ? allSalesForCustomer.filter((sale) => matchesDateRangeFilter(sale.createdAt, { mode: 'day', start: customerHistoryDateFilter, end: customerHistoryDateFilter }))
-    : allSalesForCustomer;
+function getTodayFilter() {
+  const today = toDateInputValue(new Date());
+  return { mode: 'day', start: today, end: today };
+}
 
-  const selectedSale = selectedCustomerInvoiceId
-    ? salesForCustomer.find((sale) => sale.id === selectedCustomerInvoiceId) || null
-    : null;
+function getDashboardTransactions() {
+  const filter = getTodayFilter();
+  return state.sales
+    .filter((sale) => isCustomerSale(sale) || isReturn(sale))
+    .filter((sale) => matchesDateRangeFilter(sale.createdAt, filter));
+}
 
-  const customPurchaseRangeHtml = customerPurchaseRange === 'custom' ? `
-    <div class="customer-period-custom inline-custom-range">
-      <label>Du <input type="date" id="customer-purchase-start" value="${customerPurchaseCustomRange.start || ''}" /></label>
-      <label>Au <input type="date" id="customer-purchase-end" value="${customerPurchaseCustomRange.end || ''}" /></label>
-    </div>
-  ` : '';
+function renderDashboard() {
+  const summary = document.getElementById('dashboard-summary');
+  const history = document.getElementById('dashboard-history');
+  if (!summary || !history) return;
 
-  const purchaseHistoryHtml = salesForCustomer.length
-    ? salesForCustomer.map((sale) => {
-      const { label, settledAt } = getInvoiceHistoryLabel(customer, sale);
-      return `
-        <button class="purchase-row ${selectedSale && selectedSale.id === sale.id ? 'active' : ''}" data-open-sale="${sale.id}">
-          <div class="purchase-row-info">
-            <strong>Facture n°${sale.id.slice(-4)}</strong>
-            <small>${new Date(sale.createdAt).toLocaleString('fr-FR')} · ${plural(sale.items.length, 'article')}</small>
-          </div>
-          <div class="purchase-row-amount">
-            <strong>${formatMoney(sale.totalAmount)}</strong>
-            <span class="mini-pill ${sale.paymentMethod === 'debt' ? 'warning' : 'success'}">${label}</span>
-            ${settledAt ? `<small class="purchase-row-settled">Réglée le ${new Date(settledAt).toLocaleDateString('fr-FR')}</small>` : ''}
-          </div>
-          <span class="purchase-arrow">›</span>
-        </button>
-      `;
-    }).join('')
-    : `<p class="empty-state">${customerHistoryDateFilter ? 'Aucun achat à cette date.' : 'Aucun achat pour le moment.'}</p>`;
+  const todayTransactions = getDashboardTransactions();
+  const todaySales = todayTransactions.filter(isCustomerSale);
+  const todayReturns = todayTransactions.filter(isReturn);
+  const todayWastes = state.sales
+    .filter((sale) => getTransactionType(sale) === 'waste')
+    .filter((sale) => matchesDateRangeFilter(sale.createdAt, getTodayFilter()));
+  const salesTotal = todaySales.reduce((total, sale) => total + Number(sale.totalAmount || 0), 0);
+  const wasteQuantity = todayWastes.reduce((total, sale) => total + (sale.items || [])
+    .reduce((itemsTotal, item) => itemsTotal + Number(item.quantity || 0), 0), 0);
+  const debtTotal = state.customers.reduce((total, customer) => total + Math.max(0, Number(customer.balance || 0)), 0);
+  const lowStockCount = state.products.filter((product) => Number(product.stock || 0) <= getLowStockThreshold(product)).length;
 
-  const selectedSaleHistory = selectedSale ? getInvoiceHistoryLabel(customer, selectedSale) : null;
+  const cards = [
+    ['Factures aujourd’hui', todaySales.length, 'facture(s)'],
+    ['Ventes aujourd’hui', formatMoney(salesTotal), 'total des factures'],
+    ['Total dû', formatMoney(debtTotal), 'dettes en cours'],
+    ['Stock faible', lowStockCount, 'produit(s) à réapprovisionner'],
+    ['Pertes aujourd’hui', wasteQuantity, 'article(s) perdu(s)'],
+    ['Retours aujourd’hui', todayReturns.length, 'transaction(s)']
+  ];
+  summary.innerHTML = cards.map(([label, value, hint]) => `
+    <article class="dashboard-stat-card">
+      <span>${label}</span>
+      <strong>${value}</strong>
+      <small>${hint}</small>
+    </article>`).join('');
 
-  const invoiceHtml = selectedSale
-    ? `
-      <div class="invoice-sheet">
-        <div class="invoice-topbar">
-          <div>
-            <p class="eyebrow muted">Facture</p>
-            <h4>Facture n°${selectedSale.id.slice(-4)}</h4>
-          </div>
-          <button class="link-btn" data-back-to-history>Retour</button>
-        </div>
+  const recent = [...state.sales]
+    .filter((sale) => isCustomerSale(sale) || isReturn(sale))
+    .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+    .slice(0, 8);
+  history.innerHTML = recent.length ? recent.map((sale) => {
+    const returning = isReturn(sale);
+    const customer = sale.customerId ? getCustomerById(sale.customerId) : null;
+    return `
+      <button type="button" class="dashboard-transaction-row" data-dashboard-sale="${sale.id}">
+        <span><strong>${returning ? `Retour n°${sale.id.slice(-4)}` : `Facture n°${sale.id.slice(-4)}`}</strong><small>${new Date(sale.createdAt).toLocaleDateString('fr-FR')}</small></span>
+        <span><b class="dashboard-transaction-type${returning ? ' is-return' : ''}">${returning ? 'Retour' : 'Vente'}</b><small>${customer ? escapeHtml(customer.name) : 'Client de passage'}</small></span>
+        <strong>${formatMoney(sale.totalAmount)}</strong>
+        <span class="dashboard-transaction-status">${returning ? 'Retour' : getInvoiceStatus(sale)}</span>
+        <span class="dashboard-transaction-action">Voir</span>
+      </button>`;
+  }).join('') : '<p class="dashboard-empty">Aucune vente ou retour enregistré.</p>';
 
-        <div class="invoice-meta">
-          <div><span>Client</span><strong>${customer.name}</strong></div>
-          <div><span>Téléphone</span><strong>${customer.phone}</strong></div>
-          <div><span>Date</span><strong>${new Date(selectedSale.createdAt).toLocaleString('fr-FR')}</strong></div>
-        </div>
-
-        <table class="invoice-table">
-          <thead>
-            <tr>
-              <th>Produit</th>
-              <th>Qté</th>
-              <th>Prix</th>
-              <th>Total</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${selectedSale.items.map((item) => `
-              <tr>
-                <td>${item.productName}</td>
-                <td>${item.quantity}</td>
-                <td>${formatMoney(item.unitPrice)}</td>
-                <td>${formatMoney(item.subtotal)}</td>
-              </tr>
-            `).join('')}
-          </tbody>
-        </table>
-
-        <div class="invoice-totals">
-          <div><span>Sous-total</span><strong>${formatMoney(Number(selectedSale.totalAmount || 0) + Number(selectedSale.discount || 0))}</strong></div>
-          ${selectedSale.discountPercent > 0 ? `<div><span>Remise (${selectedSale.discountPercent} %)</span><strong>-${formatMoney(selectedSale.discount)}</strong></div>` : ''}
-          <div><span>Montant payé</span><strong>${formatMoney(getInvoicePaidAmount(selectedSale))}</strong></div>
-          <div><span>Reste à payer</span><strong>${formatMoney(getInvoiceRemainingAmount(selectedSale))}</strong></div>
-          ${selectedSale.paymentMethod === 'debt' ? `<div><span>Statut</span><strong>${selectedSaleHistory.label}</strong></div>` : ''}
-          ${selectedSaleHistory.settledAt ? `<div><span>Réglée le</span><strong>${new Date(selectedSaleHistory.settledAt).toLocaleDateString('fr-FR')}</strong></div>` : ''}
-          <div><span>Paiement</span><strong>${selectedSale.paymentMethod === 'debt' ? (selectedSale.paymentType === 'partial' ? 'Paiement partiel' : 'Crédit') : 'Espèces'}</strong></div>
-        </div>
-      </div>
-    `
-    : '<div class="empty-invoice"><p class="empty-state">Sélectionnez un achat pour afficher les détails de la facture.</p></div>';
-
-  const historyHtml = customer.debtHistory.length
-    ? customer.debtHistory.map((entry) => `
-        <div class="timeline-item">
-          <div>
-            <strong>${entry.type === 'sale' ? 'Vente à crédit' : 'Paiement reçu'}</strong>
-            <small>${new Date(entry.date).toLocaleString('fr-FR')}${entry.saleId ? ` · Facture n°${entry.saleId.slice(-4)}` : ''}</small>
-          </div>
-          <strong class="${entry.type === 'sale' ? 'credit' : 'payment'}">${entry.type === 'sale' ? '+' : '-'}${formatMoney(entry.amount)}</strong>
-        </div>
-      `).join('')
-    : '<p class="empty-state">Aucune activité de dette ou de paiement pour le moment.</p>';
-
-  document.getElementById('customer-profile').innerHTML = `
-    <div class="profile-header">
-      <div>
-        <p class="eyebrow muted">Client</p>
-        <h3>${customer.name}</h3>
-        <span class="subtle">${customer.phone}</span>
-        ${customer.address ? `<span class="subtle">${customer.address}</span>` : ''}
-      </div>
-      <div class="balance-box">
-        <span>Total dû</span>
-        <strong>${formatMoney(customer.balance)}</strong>
-      </div>
-      <button type="button" class="secondary-btn compact-btn" data-edit-profile-customer="${customer.id}">Modifier le client</button>
-    </div>
-
-    <div class="profile-grid">
-      <div class="profile-panel">
-        <h4>Vue d’ensemble</h4>
-        <div class="mini-grid">
-          <div>
-            <span>Dette actuelle</span>
-            <strong>${formatMoney(customer.balance)}</strong>
-          </div>
-          <div>
-            <span>Total des achats</span>
-            <strong>${formatMoney(customer.totalPurchased)}</strong>
-          </div>
-        </div>
-      </div>
-
-      <div class="profile-panel">
-        <h4>Achats</h4>
-        <label class="purchase-range-control"><span>Période</span><select id="customer-purchase-range"><option value="today" ${customerPurchaseRange === 'today' ? 'selected' : ''}>Aujourd’hui</option><option value="7d" ${customerPurchaseRange === '7d' ? 'selected' : ''}>7 derniers jours</option><option value="30d" ${customerPurchaseRange === '30d' ? 'selected' : ''}>30 derniers jours</option><option value="custom" ${customerPurchaseRange === 'custom' ? 'selected' : ''}>Personnalisé</option></select></label>
-        ${customPurchaseRangeHtml}
-        <strong class="purchase-range-total">${formatMoney(rangedPurchaseTotal)}</strong>
-        <small>${plural(rangedPurchases.length, 'achat')} sur la période</small>
-      </div>
-
-      <div class="profile-panel">
-        <h4>Paiements</h4>
-        <p>${formatMoney(customer.totalPaid)}</p>
-      </div>
-    </div>
-
-    <div class="profile-sections">
-      <div class="profile-section">
-        <div class="profile-section-heading-row">
-          <h4>Historique des achats</h4>
-          <div class="history-date-filter">
-            <input type="date" id="customer-history-date" value="${customerHistoryDateFilter}" aria-label="Filtrer les achats par date" />
-            ${customerHistoryDateFilter ? '<button type="button" class="link-btn muted" id="clear-customer-history-date">Effacer</button>' : ''}
-          </div>
-        </div>
-        <div class="purchase-list">${purchaseHistoryHtml}</div>
-      </div>
-
-      <div class="profile-section">
-        <h4>Détails de la facture</h4>
-        ${invoiceHtml}
-      </div>
-    </div>
-
-    <div class="profile-section debt-history-section">
-      <h4>Historique des dettes et paiements</h4>
-      ${historyHtml}
-    </div>
-  `;
-
-  document.querySelectorAll('[data-open-sale]').forEach((button) => {
-    button.addEventListener('click', () => {
-      selectedCustomerInvoiceId = button.dataset.openSale;
-      showCustomerProfile(customer.id);
-    });
-  });
-
-  const backButton = document.querySelector('[data-back-to-history]');
-  if (backButton) {
-    backButton.addEventListener('click', () => {
-      selectedCustomerInvoiceId = null;
-      showCustomerProfile(customer.id);
-    });
-  }
-
-  document.querySelector('[data-edit-profile-customer]')?.addEventListener('click', () => {
-    beginEditCustomer(customer.id);
-    document.getElementById('customer-form-title')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  });
-
-  document.getElementById('customer-history-date')?.addEventListener('change', (event) => {
-    customerHistoryDateFilter = event.target.value;
-    selectedCustomerInvoiceId = null;
-    showCustomerProfile(customer.id);
-  });
-
-  document.getElementById('customer-purchase-range')?.addEventListener('change', (event) => {
-    customerPurchaseRange = event.target.value;
-    if (customerPurchaseRange !== 'custom') {
-      customerPurchaseCustomRange = { start: '', end: '' };
-    }
-    showCustomerProfile(customer.id);
-  });
-
-  if (customerPurchaseRange === 'custom') {
-    document.getElementById('customer-purchase-start')?.addEventListener('change', (event) => {
-      customerPurchaseCustomRange.start = event.target.value;
-      showCustomerProfile(customer.id);
-    });
-    document.getElementById('customer-purchase-end')?.addEventListener('change', (event) => {
-      customerPurchaseCustomRange.end = event.target.value;
-      showCustomerProfile(customer.id);
-    });
-  }
-
-  document.getElementById('clear-customer-history-date')?.addEventListener('click', () => {
-    customerHistoryDateFilter = '';
-    selectedCustomerInvoiceId = null;
-    showCustomerProfile(customer.id);
+  history.querySelectorAll('[data-dashboard-sale]').forEach((button) => {
+    button.addEventListener('click', () => openReceipt(button.dataset.dashboardSale));
   });
 }
 
@@ -1753,10 +1524,8 @@ function renderClientRows(listEl, searchValue) {
 
 function renderClientProfilePage(container, customer) {
   const owed = Number(customer.balance || 0);
-  const purchaseSummaryTotal = getCustomerPurchaseTotalForFilter(customer.id, customerPurchaseSummaryFilter);
-  const transactionHistoryRows = getCustomerTransactionHistoryForFilter(customer.id, customerTransactionHistoryFilter);
-  const purchaseFilterLabel = getDateFilterSummary(customerPurchaseSummaryFilter);
-  const historyFilterLabel = getDateFilterSummary(customerTransactionHistoryFilter);
+  const purchaseSummaryTotal = getCustomerPurchaseTotalForFilter(customer.id, customerDateFilter);
+  const transactionHistoryRows = getCustomerTransactionHistoryForFilter(customer.id, customerDateFilter);
 
   container.innerHTML = `
     <div class="ledger-page">
@@ -1784,9 +1553,6 @@ function renderClientProfilePage(container, customer) {
         <h4>Historique des transactions</h4>
         <span>${plural(transactionHistoryRows.length, 'transaction')}</span>
       </div>
-      <div class="stock-history-controls ledger-history-controls">
-        <div data-history-filter class="shared-date-filter"></div>
-      </div>
       <div class="ledger-table ledger-invoice-list">
         ${transactionHistoryRows.length ? transactionHistoryRows.map((invoice) => isReturn(invoice)
     ? `<button type="button" class="ledger-row invoice-ledger-row ledger-return-row" data-client-invoice-id="${invoice.id}"><span><strong>Retour n°${invoice.id.slice(-4)}</strong><small>${new Date(invoice.createdAt).toLocaleDateString('fr-FR')}</small></span><span><strong>${formatMoney(invoice.totalAmount)}</strong><small>Total du retour</small></span><span><strong>${invoice.items.reduce((sum, item) => sum + Number(item.quantity || 0), 0)}</strong><small>Article(s)</small></span><span class="ledger-remaining"><strong>&mdash;</strong><small>Reste à payer</small></span><span><b class="ledger-status ledger-status-return">Retour</b></span><span class="ledger-arrow">›</span></button>`
@@ -1796,12 +1562,8 @@ function renderClientProfilePage(container, customer) {
     </div>
   `;
 
-  setupSharedDateFilter(container.querySelector('[data-purchase-summary-filter]'), 'customer-purchase-summary', customerPurchaseSummaryFilter, (filter) => {
-    customerPurchaseSummaryFilter = filter;
-    renderClientProfilePage(container, customer);
-  });
-  setupSharedDateFilter(container.querySelector('[data-history-filter]'), 'customer-history', customerTransactionHistoryFilter, (filter) => {
-    customerTransactionHistoryFilter = filter;
+  setupSharedDateFilter(container.querySelector('[data-purchase-summary-filter]'), 'customer', customerDateFilter, (filter) => {
+    customerDateFilter = filter;
     renderClientProfilePage(container, customer);
   });
 
@@ -2815,13 +2577,9 @@ const REPORT_TYPES = {
 // Which transaction types each filter chip lets through. 'money' is the cash view:
 // only the types that move money in or out of the till.
 const REPORT_CATEGORIES = {
-  all: ['sale', 'purchase', 'return', 'waste', 'adjustment', 'adjustment_out'],
-  money: ['sale', 'purchase', 'return'],
+  all: ['sale', 'return'],
   sale: ['sale'],
-  purchase: ['purchase'],
-  return: ['return'],
-  waste: ['waste'],
-  adjustment: ['adjustment', 'adjustment_out']
+  return: ['return']
 };
 
 let reportFilters = { mode: 'day', day: '', start: '', end: '', category: 'all', customerId: '' };
@@ -2959,6 +2717,9 @@ function summariseReport(rows) {
     unitsReturned: unitsFor('return'),
     unitsWasted: unitsFor('waste'),
     unitsAdjusted: unitsFor('adjustment') - unitsFor('adjustment_out'),
+    totalDue: rows
+      .filter((row) => row.type === 'sale')
+      .reduce((sum, row) => sum + getInvoiceRemainingAmount(row.sale), 0),
     count: rows.length,
     // Not period figures: these are the state of the shop right now, carried over
     // from the dashboard this page replaced.
@@ -3015,7 +2776,7 @@ function reportTiles(summary) {
 
 // The payment pill the retired Historique page showed. Only a sale has a tender.
 function reportSettlement(row) {
-  if (row.type !== 'sale') return '<span class="subtle">—</span>';
+  if (row.type !== 'sale') return '<span class="mini-pill report-pill-return">Retour</span>';
   const credit = row.sale?.paymentMethod === 'debt';
   const label = credit ? (row.sale?.paymentType === 'partial' ? getInvoiceStatus(row.sale) : 'Crédit') : 'Espèces';
   return `<span class="mini-pill ${credit ? 'warning' : 'success'}">${label}</span>`;
@@ -3025,11 +2786,7 @@ function reportSettlement(row) {
 // to show.
 function reportRowActions(row) {
   if (row.type === 'sale' || row.type === 'return') {
-    return `<button class="link-btn" data-report-view="${row.id}">Voir</button>
-            <button class="link-btn danger-link" data-report-delete="${row.id}">Supprimer</button>`;
-  }
-  if (row.type === 'purchase' || row.type === 'waste') {
-    return `<button class="link-btn danger-link" data-report-delete="${row.id}">Supprimer</button>`;
+    return `<button class="link-btn" data-report-view="${row.id}">Voir</button>`;
   }
   return '';
 }
@@ -3051,8 +2808,8 @@ function reportTable(rows) {
         <table class="report-table">
           <thead>
             <tr>
-              <th>Date</th><th>Type</th><th>Détail</th><th>Règlement</th>
-              <th class="report-num">Articles</th><th class="report-num">Montant</th>
+              <th>Date</th><th>Type</th><th>Facture / reçu</th><th>Client</th>
+              <th class="report-num">Total</th><th>Statut</th>
               <th class="row-actions-head" aria-label="Actions"></th>
             </tr>
           </thead>
@@ -3060,15 +2817,16 @@ function reportTable(rows) {
             ${rows.map((row) => {
     const meta = REPORT_TYPES[row.type];
     const when = new Date(row.at);
-    const stamp = `${when.toLocaleDateString('fr-FR')} ${when.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}`;
+    const stamp = when.toLocaleDateString('fr-FR');
+    const documentLabel = row.type === 'return' ? `Retour n°${row.id.slice(-4)}` : `Facture n°${row.id.slice(-4)}`;
     return `
               <tr class="report-row report-row-${meta.chip}">
                 <td>${stamp}</td>
                 <td><span class="mini-pill report-pill-${meta.chip}">${meta.label}</span></td>
-                <td>${escapeHtml(row.party)}${row.detail ? `<small class="report-detail">${escapeHtml(row.detail)}</small>` : ''}</td>
-                <td>${reportSettlement(row)}</td>
-                <td class="report-num">${row.units || '—'}</td>
+                <td><strong>${documentLabel}</strong></td>
+                <td>${escapeHtml(row.party)}</td>
                 <td class="report-num">${formatMoney(row.amount)}</td>
+                <td>${reportSettlement(row)}</td>
                 <td class="row-actions">${reportRowActions(row)}</td>
               </tr>`;
   }).join('')}
@@ -3087,7 +2845,10 @@ function renderReports() {
 
   container.innerHTML = `
     <p class="report-period">${escapeHtml(reportPeriodLabel())} · ${plural(summary.count, 'mouvement')}</p>
-    ${reportTiles(summary)}
+    <div class="report-totals" aria-label="Totaux de la période">
+      <div class="report-total"><span>Total des ventes</span><strong>${formatMoney(summary.salesValue)}</strong></div>
+      <div class="report-total"><span>Total dû</span><strong>${formatMoney(summary.totalDue)}</strong></div>
+    </div>
     ${reportTable(rows)}`;
 
   const bind = (attribute, handler) => container.querySelectorAll(`[${attribute}]`).forEach((button) => {
@@ -3131,22 +2892,6 @@ function renderReportCustomerSuggestions() {
   });
 }
 
-function setReportMode(mode) {
-  const next = mode === 'range' ? 'range' : 'day';
-  if (next === reportFilters.mode) return;
-  reportFilters.mode = next;
-
-  document.querySelectorAll('[data-report-mode]').forEach((button) => {
-    const active = button.dataset.reportMode === next;
-    button.classList.toggle('active', active);
-    button.setAttribute('aria-pressed', String(active));
-  });
-  document.getElementById('report-day-field')?.classList.toggle('hidden', next !== 'day');
-  document.getElementById('report-start-field')?.classList.toggle('hidden', next !== 'range');
-  document.getElementById('report-end-field')?.classList.toggle('hidden', next !== 'range');
-  renderReports();
-}
-
 function setReportCategory(category) {
   reportFilters.category = REPORT_CATEGORIES[category] ? category : 'all';
   document.querySelectorAll('[data-report-category]').forEach((button) => {
@@ -3165,13 +2910,9 @@ function buildReportSheet() {
   const categoryLabel = document.querySelector(`[data-report-category="${reportFilters.category}"]`)?.textContent || 'Tout';
 
   const lines = [
-    ['Encaissé', formatMoney(summary.cashIn)],
-    ['Décaissé', formatMoney(summary.cashOut)],
-    ['Solde net', formatMoney(summary.net)],
-    ['Ventes', `${summary.unitsSold} art. · ${formatMoney(summary.salesValue)}`],
-    ['Achats', `${summary.unitsBought} art. · ${formatMoney(summary.purchaseValue)}`],
+    ['Total des ventes', formatMoney(summary.salesValue)],
+    ['Total dû', formatMoney(summary.totalDue)],
     ['Retours', `${summary.unitsReturned} art. · ${formatMoney(summary.returnValue)}`],
-    ['Pertes', `${summary.unitsWasted} article(s) · stock uniquement`],
   ];
 
   return `
@@ -3245,23 +2986,6 @@ function setupReportListeners() {
     reportFilters.start = filter.start;
     reportFilters.end = filter.end;
     renderReports();
-  });
-  const day = document.getElementById('report-day');
-  if (day) {
-    day.value = toDateInputValue(new Date());
-    reportFilters.day = day.value;
-    day.addEventListener('change', (event) => { reportFilters.day = event.target.value; renderReports(); });
-  }
-  document.getElementById('report-start')?.addEventListener('change', (event) => {
-    reportFilters.start = event.target.value;
-    renderReports();
-  });
-  document.getElementById('report-end')?.addEventListener('change', (event) => {
-    reportFilters.end = event.target.value;
-    renderReports();
-  });
-  document.querySelectorAll('[data-report-mode]').forEach((button) => {
-    button.addEventListener('click', () => setReportMode(button.dataset.reportMode));
   });
   document.querySelectorAll('[data-report-category]').forEach((button) => {
     button.addEventListener('click', () => setReportCategory(button.dataset.reportCategory));
@@ -3450,6 +3174,7 @@ function setupExpenseListeners() {
 }
 
 function renderAll() {
+  renderDashboard();
   applyPosMode();
   renderPosProducts();
   renderCart();
@@ -3462,6 +3187,7 @@ function renderAll() {
 }
 
 function setupEventListeners() {
+  document.querySelector('[data-dashboard-reports]')?.addEventListener('click', () => setActiveTab('reports'));
   document.addEventListener('click', (event) => {
     if (event.target.closest('.shared-date-filter')) return;
     document.querySelectorAll('.shared-date-popover:not(.hidden)').forEach((popover) => popover.classList.add('hidden'));
@@ -3514,26 +3240,6 @@ function setupEventListeners() {
     const picker = document.getElementById('perte-product-picker');
     if (picker && !picker.contains(event.target)) closePerteProductOptions();
   });
-  document.querySelector('[data-pertes-reset]')?.addEventListener('click', resetPerteFilters);
-  document.getElementById('pertes-date-toggle')?.addEventListener('click', () => {
-    const panel = document.getElementById('pertes-date-panel');
-    if (!panel) return;
-    panel.classList.toggle('hidden');
-    if (!panel.classList.contains('hidden')) {
-      document.getElementById('pertes-date-start')?.focus();
-    }
-  });
-  document.getElementById('pertes-date-start')?.addEventListener('change', (event) => {
-    pertesFilters.start = event.target.value;
-    pertesFilters.mode = getDateFilterMode(pertesFilters.start, pertesFilters.end);
-    renderWasteView();
-  });
-  document.getElementById('pertes-date-end')?.addEventListener('change', (event) => {
-    pertesFilters.end = event.target.value;
-    pertesFilters.mode = getDateFilterMode(pertesFilters.start, pertesFilters.end);
-    renderWasteView();
-  });
-  document.getElementById('pertes-reset-date')?.addEventListener('click', resetPerteFilters);
   document.getElementById('add-perte-btn')?.addEventListener('click', () => openPerteEditor());
   document.getElementById('perte-form')?.addEventListener('submit', handlePerteSubmit);
   document.getElementById('cancel-perte-edit')?.addEventListener('click', closePerteEditor);
