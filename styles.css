@@ -5536,6 +5536,21 @@ tr:focus-within>.row-actions .link-btn {
   background: var(--panel-soft);
 }
 
+.pertes-history-controls,
+.ledger-history-controls {
+  justify-content: flex-start;
+  margin-top: 12px;
+  margin-bottom: 10px;
+}
+
+.ledger-history-controls {
+  width: fit-content;
+}
+
+.ledger-history-controls .shared-date-filter {
+  flex: 0 0 auto;
+}
+
 .purchase-history-product-filter {
   display: flex;
   align-items: center;
@@ -5699,4 +5714,8 @@ tr:focus-within>.row-actions .link-btn {
   color: var(--muted);
   font-size: 1rem;
   line-height: 1;
+}
+
+.ledger-invoice-list {
+  margin-top: 0;
 }

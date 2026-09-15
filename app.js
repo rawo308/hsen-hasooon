@@ -1783,10 +1783,10 @@ function renderClientProfilePage(container, customer) {
       </div>
       <div class="ledger-section-heading">
         <h4>Historique des transactions</h4>
-        <div class="ledger-history-filter-wrap">
-          <div data-history-filter class="shared-date-filter"></div>
-          <span>${plural(transactionHistoryRows.length, 'transaction')}</span>
-        </div>
+        <span>${plural(transactionHistoryRows.length, 'transaction')}</span>
+      </div>
+      <div class="stock-history-controls ledger-history-controls">
+        <div data-history-filter class="shared-date-filter"></div>
       </div>
       <div class="ledger-table ledger-invoice-list">
         ${transactionHistoryRows.length ? transactionHistoryRows.map((invoice) => isReturn(invoice)
