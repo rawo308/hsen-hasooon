@@ -1,88 +1,119 @@
 <!DOCTYPE html>
 <html lang="fr" translate="no">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-    <meta name="google" content="notranslate" />
-    <title>H.H Fruit &ndash; Gestion des stocks et des ventes</title>
-    <link rel="stylesheet" href="/styles.css?v=40" />
-  </head>
-  <body>
-    <div class="app-shell">
-      <aside class="sidebar">
-        <div class="brand-block">
-          <img class="brand-logo" src="/pics/logo.png" alt="Logo H.H Fruit" />
-          <div><h1>H.H Fruit</h1><p>Gestion des stocks et des ventes</p></div>
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="google" content="notranslate" />
+  <title>H.H Fruit &ndash; Gestion des stocks et des ventes</title>
+  <link rel="stylesheet" href="/styles.css?v=40" />
+</head>
+
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="brand-block">
+        <img class="brand-logo" src="/pics/logo.png" alt="Logo H.H Fruit" />
+        <div>
+          <h1>H.H Fruit</h1>
+          <p>Gestion des stocks et des ventes</p>
         </div>
+      </div>
 
-        <nav class="nav-menu">
-          <button class="nav-btn active" data-tab="pos">Caisse</button>
-          <button class="nav-btn" data-tab="stock">Stock</button>
-          <button class="nav-btn" data-tab="customers">Clients</button>
-          <button class="nav-btn" data-tab="expenses">Dépenses</button>
-          <button class="nav-btn" data-tab="reports">Rapports</button>
-        </nav>
+      <nav class="nav-menu">
+        <button class="nav-btn active" data-tab="dashboard">Accueil</button>
+        <button class="nav-btn" data-tab="pos">Caisse</button>
+        <button class="nav-btn" data-tab="stock">Stock</button>
+        <button class="nav-btn" data-tab="customers">Clients</button>
+        <button class="nav-btn" data-tab="reports">Rapports</button>
+      </nav>
 
-        <button type="button" id="logout-btn" class="logout-btn">Se déconnecter</button>
-      </aside>
+      <button type="button" id="logout-btn" class="logout-btn">Se déconnecter</button>
+    </aside>
 
-      <main class="main-panel">
-        <section id="pos" class="tab-panel active">
-          <header class="panel-header pos-page-header">
+    <main class="main-panel">
+      <section id="dashboard" class="tab-panel active">
+        <header class="panel-header dashboard-header">
+          <div>
+            <p class="eyebrow">Vue d'ensemble</p>
+            <h2>Accueil</h2>
+            <p class="page-subtitle">Les chiffres essentiels du jour.</p>
+          </div>
+        </header>
+
+        <div id="dashboard-summary" class="dashboard-summary-grid"></div>
+        <section class="dashboard-history-section" aria-labelledby="dashboard-history-title">
+          <div class="dashboard-section-heading">
             <div>
-              <p class="eyebrow">Point de vente</p>
-              <h2 id="pos-page-title">Nouvelle vente</h2>
-              <p class="page-subtitle" id="pos-page-subtitle">Choisissez les produits, vérifiez la commande et encaissez.</p>
+              <p class="section-kicker">Activité récente</p>
+              <h3 id="dashboard-history-title">Dernières ventes</h3>
             </div>
-            <span class="sale-status" id="pos-status-pill">Prêt à vendre</span>
-          </header>
+            <button type="button" class="link-btn" data-dashboard-reports>Voir les rapports</button>
+          </div>
+          <div id="dashboard-history" class="dashboard-history-list" aria-live="polite"></div>
+        </section>
+      </section>
 
-          <div class="pos-layout">
-            <div class="card product-area">
-              <div class="card-header">
-                <div>
-                  <p class="section-kicker">Catalogue</p>
-                  <h3>Produits</h3>
-                </div>
-                <span class="catalog-hint" id="pos-catalog-hint">Cliquez sur Ajouter pour créer la vente</span>
+      <section id="pos" class="tab-panel">
+        <header class="panel-header pos-page-header">
+          <div>
+            <p class="eyebrow">Point de vente</p>
+            <h2 id="pos-page-title">Nouvelle vente</h2>
+            <p class="page-subtitle" id="pos-page-subtitle">Choisissez les produits, vérifiez la commande et encaissez.
+            </p>
+          </div>
+          <span class="sale-status" id="pos-status-pill">Prêt à vendre</span>
+        </header>
+
+        <div class="pos-layout">
+          <div class="card product-area">
+            <div class="card-header">
+              <div>
+                <p class="section-kicker">Catalogue</p>
+                <h3>Produits</h3>
               </div>
-              <label class="search-field">
-                <span>Rechercher un produit</span>
-                <input id="pos-product-search" type="search" placeholder="Rechercher par nom" />
+              <span class="catalog-hint" id="pos-catalog-hint">Cliquez sur Ajouter pour créer la vente</span>
+            </div>
+            <label class="search-field">
+              <span>Rechercher un produit</span>
+              <input id="pos-product-search" type="search" placeholder="Rechercher par nom" />
+            </label>
+            <div id="pos-product-list" class="catalog-list" translate="no"></div>
+          </div>
+
+          <div class="card cart-area" id="cart-area">
+            <div class="card-header">
+              <div>
+                <p class="section-kicker" id="cart-kicker">Encaissement</p>
+                <h3 id="cart-title">Vente en cours</h3>
+              </div>
+              <span id="cart-count" class="cart-count">0 items</span>
+            </div>
+            <div class="pos-mode-toggle" role="group" aria-label="Type de transaction">
+              <button type="button" class="pos-mode-btn active" data-pos-mode="sale" aria-pressed="true">Vente</button>
+              <button type="button" class="pos-mode-btn" data-pos-mode="return" aria-pressed="false">Retour</button>
+            </div>
+            <div id="cart-items" class="cart-items"></div>
+            <div class="totals-box">
+              <div class="total-row"><span>Sous-total</span><strong id="subtotal-value">0 F CFA</strong></div>
+              <label class="sale-discount-field" id="sale-discount-field">
+                <span>Remise (%)</span>
+                <input id="sale-discount-percent" type="number" min="0" max="100" step="0.01" value="0" />
               </label>
-              <div id="pos-product-list" class="catalog-list" translate="no"></div>
+              <div class="total-row checkout-discount-row" id="checkout-discount-row"><span>Remise</span><strong
+                  id="checkout-discount-value">0 F CFA</strong></div>
+              <div class="total-row grand-total"><span id="total-label">Total</span><strong id="total-value">0 F
+                  CFA</strong></div>
             </div>
 
-            <div class="card cart-area" id="cart-area">
-              <div class="card-header">
-                <div>
-                  <p class="section-kicker" id="cart-kicker">Encaissement</p>
-                  <h3 id="cart-title">Vente en cours</h3>
-                </div>
-                <span id="cart-count" class="cart-count">0 items</span>
-              </div>
-              <div class="pos-mode-toggle" role="group" aria-label="Type de transaction">
-                <button type="button" class="pos-mode-btn active" data-pos-mode="sale" aria-pressed="true">Vente</button>
-                <button type="button" class="pos-mode-btn" data-pos-mode="return" aria-pressed="false">Retour</button>
-                <button type="button" class="pos-mode-btn" data-pos-mode="waste" aria-pressed="false">Perte</button>
-              </div>
-              <div id="cart-items" class="cart-items"></div>
-              <div class="totals-box">
-                <div class="total-row"><span>Sous-total</span><strong id="subtotal-value">0 F CFA</strong></div>
-                <label class="sale-discount-field" id="sale-discount-field">
-                  <span>Remise (%)</span>
-                  <input id="sale-discount-percent" type="number" min="0" max="100" step="0.01" value="0" />
-                </label>
-                <div class="total-row checkout-discount-row" id="checkout-discount-row"><span>Remise</span><strong id="checkout-discount-value">0 F CFA</strong></div>
-                <div class="total-row grand-total"><span id="total-label">Total</span><strong id="total-value">0 F CFA</strong></div>
-              </div>
-
-              <div class="sale-form">
-                <div id="pos-customer-block">
+            <div class="sale-form">
+              <div id="pos-customer-block">
                 <div class="form-section-title" id="pos-customer-section-title">Client et paiement</div>
                 <div class="history-customer-picker pos-customer-picker">
                   <label for="pos-customer-search">Client</label>
-                  <input id="pos-customer-search" type="search" placeholder="Rechercher par nom ou téléphone, laisser vide pour un client de passage" autocomplete="off" />
+                  <input id="pos-customer-search" type="search"
+                    placeholder="Rechercher par nom ou téléphone, laisser vide pour un client de passage"
+                    autocomplete="off" />
                   <div id="pos-customer-suggestions" class="history-suggestions hidden" translate="no"></div>
                 </div>
                 <div class="new-customer-toggle-row">
@@ -94,60 +125,55 @@
                   <input id="new-customer-address" type="text" placeholder="Adresse (facultatif)" />
                   <button type="button" id="create-customer-from-pos" class="secondary-btn">Ajouter le client</button>
                 </div>
-                </div>
-
-                <div id="pos-payment-fields" class="pos-payment-fields">
-                  <label>
-                    <span>Mode de paiement</span>
-                    <select id="payment-method-select">
-                      <option value="cash">Espèces</option>
-                      <option value="debt">Crédit</option>
-                      <option value="partial">Paiement partiel</option>
-                    </select>
-                  </label>
-                  <label id="partial-payment-field" class="hidden">
-                    <span>Montant payé maintenant</span>
-                    <input id="partial-payment-amount" type="number" min="0.01" step="0.01" placeholder="Saisir le montant payé" />
-                  </label>
-                </div>
-                <div id="pos-waste-fields" class="pos-waste-fields hidden">
-                  <label>
-                    <span>Motif de la perte</span>
-                    <select id="waste-reason">
-                      <option value="Pourriture">Pourriture</option>
-                      <option value="Casse">Casse</option>
-                      <option value="Invendu">Invendu</option>
-                      <option value="Vol">Vol</option>
-                      <option value="Autre">Autre</option>
-                    </select>
-                  </label>
-                  <p class="pos-return-note">Les produits seront retirés du stock. La perte est valorisée au prix de vente.</p>
-                </div>
-                <p id="pos-return-note" class="pos-return-note hidden">Le stock des produits sélectionnés sera réapprovisionné. Le montant est déduit de la dette du client, le reste est rendu en espèces.</p>
-
-                <button id="complete-sale-btn" class="primary-btn">Finaliser la vente</button>
-                <div id="pos-message" class="message-box"></div>
               </div>
+
+              <div id="pos-payment-fields" class="pos-payment-fields">
+                <label>
+                  <span>Mode de paiement</span>
+                  <select id="payment-method-select">
+                    <option value="cash">Espèces</option>
+                    <option value="debt">Crédit</option>
+                    <option value="partial">Paiement partiel</option>
+                  </select>
+                </label>
+                <label id="partial-payment-field" class="hidden">
+                  <span>Montant payé maintenant</span>
+                  <input id="partial-payment-amount" type="number" min="0.01" step="0.01"
+                    placeholder="Saisir le montant payé" />
+                </label>
+              </div>
+              <p id="pos-return-note" class="pos-return-note hidden">Le stock des produits sélectionnés sera
+                réapprovisionné. Le montant est déduit de la dette du client, le reste est rendu en espèces.</p>
+
+              <button id="complete-sale-btn" class="primary-btn">Finaliser la vente</button>
+              <div id="pos-message" class="message-box"></div>
             </div>
           </div>
-        </section>
+        </div>
+      </section>
 
-        <section id="stock" class="tab-panel">
-          <header class="panel-header products-page-header">
-            <div>
-              <p class="eyebrow">Gestion des stocks</p>
-              <h2>Stock</h2>
-              <p class="page-subtitle">Votre catalogue, vos prix, et les livraisons que vous recevez.</p>
-            </div>
-            <button id="add-product-btn" type="button" class="primary-btn product-add-btn" aria-label="Ajouter un produit" title="Ajouter un produit">+</button>
-          </header>
-
-          <div class="scope-toggle" role="group" aria-label="Vue du stock">
-            <button type="button" class="scope-btn active" data-stock-scope="catalogue" aria-pressed="true">Catalogue</button>
-            <button type="button" class="scope-btn" data-stock-scope="purchases" aria-pressed="false">Achats</button>
+      <section id="stock" class="tab-panel">
+        <header class="panel-header products-page-header">
+          <div>
+            <p class="eyebrow">Gestion des stocks</p>
+            <h2>Stock</h2>
+            <p class="page-subtitle">Votre catalogue, vos prix, et les livraisons que vous recevez.</p>
           </div>
+          <div class="report-header-actions">
+            <button id="pertes-btn" type="button" class="secondary-btn">Pertes</button>
+            <button id="add-product-btn" type="button" class="primary-btn product-add-btn"
+              aria-label="Ajouter un produit" title="Ajouter un produit">+</button>
+          </div>
+        </header>
 
-          <div id="stock-catalogue" class="stock-view">
+        <div class="scope-toggle" role="group" aria-label="Vue du stock">
+          <button type="button" class="scope-btn active" data-stock-scope="catalogue"
+            aria-pressed="true">Catalogue</button>
+          <button type="button" class="scope-btn" data-stock-scope="purchases" aria-pressed="false">Achats</button>
+          <button type="button" class="scope-btn" data-stock-scope="pertes" aria-pressed="false">Pertes</button>
+        </div>
+
+        <div id="stock-catalogue" class="stock-view">
           <div class="products-toolbar">
             <label class="product-search-field">
               <span>Rechercher dans le stock</span>
@@ -168,403 +194,448 @@
               <div id="product-list" class="product-list" translate="no"></div>
             </div>
 
-            <div id="product-editor-modal" class="modal product-editor-modal hidden" role="dialog" aria-modal="true" aria-labelledby="product-form-title">
+            <div id="product-editor-modal" class="modal product-editor-modal hidden" role="dialog" aria-modal="true"
+              aria-labelledby="product-form-title">
               <div class="modal-content product-editor-panel" id="product-editor-panel">
-              <div class="products-section-heading editor-modal-heading">
-                <div>
-                  <p class="section-kicker">Détails du produit</p>
-                  <h3 id="product-form-title">Ajouter un produit</h3>
+                <div class="products-section-heading editor-modal-heading">
+                  <div>
+                    <p class="section-kicker">Détails du produit</p>
+                    <h3 id="product-form-title">Ajouter un produit</h3>
+                  </div>
+                  <div class="editor-modal-actions">
+                    <span id="editor-mark" class="editor-mark">+</span>
+                    <button type="button" id="close-product-editor" class="icon-btn" aria-label="Fermer"
+                      title="Fermer">&times;</button>
+                  </div>
                 </div>
-                <div class="editor-modal-actions">
-                  <span id="editor-mark" class="editor-mark">+</span>
-                  <button type="button" id="close-product-editor" class="icon-btn" aria-label="Fermer" title="Fermer">&times;</button>
-                </div>
-              </div>
-              <form id="product-form" class="stack-form">
-                <section class="editor-section">
-                  <div class="editor-section-heading">
-                    <div><span class="form-section-title">01</span><h4>Informations du produit</h4></div>
-                    <p>Nom et détails du catalogue.</p>
-                  </div>
-                  <div class="editor-fields">
-                    <label class="field-wide">Nom du produit<input id="product-name" type="text" placeholder="ex. Bananes Cavendish" required /></label>
-                    <label class="field-wide">Description <span class="subtle">(facultatif)</span><textarea id="product-description" rows="2" placeholder="Brève description du produit"></textarea></label>
-                  </div>
-                </section>
-
-                <section class="editor-section">
-                  <div class="editor-section-heading">
-                    <div><span class="form-section-title">02</span><h4>Tarification</h4></div>
-                    <p>Définissez le prix de vente par défaut.</p>
-                  </div>
-                  <div class="editor-fields">
-                    <label>Prix de vente<input id="product-price" type="number" step="0.01" min="0" placeholder="0,00" required /></label>
-                  </div>
-                </section>
-
-                <section class="editor-section inventory-section">
-                  <div class="editor-section-heading">
-                    <div><span class="form-section-title">03</span><h4>Stock</h4></div>
-                    <p id="inventory-section-hint">Suivez les unités séparément des informations du produit.</p>
-                  </div>
-                  <div class="editor-fields editor-fields-two">
-                    <label id="product-stock-label"><span id="product-stock-label-text">Stock initial</span><input id="product-stock" type="number" min="0" step="1" placeholder="0" /></label>
-                    <label>Seuil de stock faible<input id="product-low-stock-threshold" type="number" min="0" step="1" placeholder="10" value="10" /></label>
-                  </div>
-                  <div id="product-stock-management" class="stock-management hidden">
-                    <div class="stock-line">
-                      <span>Stock actuel : <strong id="product-current-stock">0</strong> unités</span>
-                      <button type="button" id="toggle-add-stock-btn" class="link-btn">Corriger le stock</button>
+                <form id="product-form" class="stack-form">
+                  <section class="editor-section">
+                    <div class="editor-section-heading">
+                      <div><span class="form-section-title">01</span>
+                        <h4>Informations du produit</h4>
+                      </div>
+                      <p>Nom et détails du catalogue.</p>
                     </div>
-                    <div id="product-stock-add-row" class="stock-add-row hidden">
-                      <label class="stock-correction-field">
-                        <span>Quantité réellement comptée</span>
-                        <input id="product-stock-addition" type="number" min="0" step="1" placeholder="ex. 8" />
-                      </label>
-                      <p id="product-stock-delta" class="stock-delta"></p>
-                      <div class="stock-correction-actions">
-                        <button type="button" id="add-product-stock-btn" class="secondary-btn compact-btn">Enregistrer</button>
-                        <button type="button" id="cancel-add-stock-btn" class="link-btn muted">Annuler</button>
+                    <div class="editor-fields">
+                      <label class="field-wide">Nom du produit<input id="product-name" type="text"
+                          placeholder="ex. Bananes Cavendish" required /></label>
+                      <label class="field-wide">Description <span class="subtle">(facultatif)</span><textarea
+                          id="product-description" rows="2"
+                          placeholder="Brève description du produit"></textarea></label>
+                    </div>
+                  </section>
+
+                  <section class="editor-section">
+                    <div class="editor-section-heading">
+                      <div><span class="form-section-title">02</span>
+                        <h4>Tarification</h4>
+                      </div>
+                      <p>Définissez le prix de vente par défaut.</p>
+                    </div>
+                    <div class="editor-fields">
+                      <label>Prix de vente<input id="product-price" type="number" step="0.01" min="0" placeholder="0,00"
+                          required /></label>
+                    </div>
+                  </section>
+
+                  <section class="editor-section inventory-section">
+                    <div class="editor-section-heading">
+                      <div><span class="form-section-title">03</span>
+                        <h4>Stock</h4>
+                      </div>
+                      <p id="inventory-section-hint">Suivez les unités séparément des informations du produit.</p>
+                    </div>
+                    <div class="editor-fields editor-fields-two">
+                      <label id="product-stock-label"><span id="product-stock-label-text">Stock initial</span><input
+                          id="product-stock" type="number" min="0" step="1" placeholder="0" /></label>
+                      <label>Seuil de stock faible<input id="product-low-stock-threshold" type="number" min="0" step="1"
+                          placeholder="10" value="10" /></label>
+                    </div>
+                    <div id="product-stock-management" class="stock-management hidden">
+                      <div class="stock-line">
+                        <span>Stock actuel : <strong id="product-current-stock">0</strong> unités</span>
+                        <button type="button" id="toggle-add-stock-btn" class="link-btn">Corriger le stock</button>
+                      </div>
+                      <div id="product-stock-add-row" class="stock-add-row hidden">
+                        <label class="stock-correction-field">
+                          <span>Quantité réellement comptée</span>
+                          <input id="product-stock-addition" type="number" min="0" step="1" placeholder="ex. 8" />
+                        </label>
+                        <p id="product-stock-delta" class="stock-delta"></p>
+                        <div class="stock-correction-actions">
+                          <button type="button" id="add-product-stock-btn"
+                            class="secondary-btn compact-btn">Enregistrer</button>
+                          <button type="button" id="cancel-add-stock-btn" class="link-btn muted">Annuler</button>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                </section>
+                  </section>
 
-                <button id="product-submit-btn" type="submit" class="primary-btn">Enregistrer le produit</button>
-                <button type="button" id="cancel-product-edit" class="secondary-btn hidden">Retour au catalogue</button>
-              </form>
+                  <button id="product-submit-btn" type="submit" class="primary-btn">Enregistrer le produit</button>
+                  <button type="button" id="cancel-product-edit" class="secondary-btn hidden">Retour au
+                    catalogue</button>
+                </form>
               </div>
             </div>
           </div>
+        </div>
+
+        <div id="stock-pertes" class="stock-view hidden">
+          <div class="panel-header products-page-header pertes-header">
+            <div>
+              <p class="eyebrow">Pertes</p>
+              <h2>Pertes</h2>
+              <p id="pertes-filter-summary" class="page-subtitle">Toute la période</p>
+            </div>
+            <button type="button" id="add-perte-btn" class="primary-btn">+ Nouvelle perte</button>
           </div>
 
-          <div id="stock-purchases" class="stock-view hidden">
-          <div class="pos-layout">
-            <div class="card product-area">
-              <div class="card-header">
-                <div>
-                  <p class="eyebrow">Catalogue</p>
-                  <h3>Produits</h3>
-                </div>
-              </div>
-              <input id="purchase-product-search" type="search" placeholder="Rechercher un produit" autocomplete="off" />
-
-              <div class="new-product-toggle-row">
-                <button type="button" id="toggle-new-purchase-product-btn" class="link-btn">+ Nouveau produit</button>
-              </div>
-              <div id="new-purchase-product-fields" class="new-customer-fields hidden">
-                <input id="new-purchase-product-name" type="text" placeholder="Nom du produit (ex. BANANE 20KG)" />
-                <input id="new-purchase-product-price" type="number" min="0" step="0.01" placeholder="Prix de vente (F CFA)" />
-                <button type="button" id="create-product-from-purchase" class="secondary-btn">Créer et ajouter</button>
-              </div>
-
-              <div id="purchase-product-list" class="catalog-list" translate="no"></div>
+          <div class="products-summary" id="pertes-summary"></div>
+          <div class="card">
+            <div class="loss-summary-row">
+              <span>Total des pertes</span>
+              <strong id="pertes-total-quantity">0 article</strong>
             </div>
+          </div>
 
-            <div class="card cart-area" id="purchase-cart-area">
-              <div class="card-header">
-                <div>
-                  <p class="eyebrow">Réception</p>
-                  <h3>Achat en cours</h3>
+          <div class="stock-history-controls pertes-history-controls">
+            <div id="pertes-date-filter" class="shared-date-filter" data-date-filter="pertes"></div>
+            <div class="pertes-product-filter">
+              <label for="pertes-product-search"><span>Produit</span></label>
+              <div class="pertes-product-picker" id="pertes-product-picker">
+                <input id="pertes-product-search" type="search" placeholder="Rechercher un produit" autocomplete="off"
+                  aria-controls="pertes-product-options" aria-expanded="false" />
+                <button type="button" id="clear-pertes-product" class="pertes-product-clear hidden"
+                  aria-label="Effacer le produit">&times;</button>
+                <div id="pertes-product-options" class="pertes-product-options hidden" role="listbox"></div>
+              </div>
+            </div>
+          </div>
+
+          <div id="pertes-list" class="history-list" aria-live="polite"></div>
+        </div>
+
+        <div id="stock-purchases" class="stock-view hidden">
+          <div class="stock-add-section">
+            <div>
+              <p class="eyebrow">Réception</p>
+              <h2>Ajouter au stock</h2>
+              <p class="page-subtitle">Enregistrez les produits reçus et augmentez leur stock.</p>
+            </div>
+            <button type="button" id="open-purchase-editor" class="primary-btn">+ Ajouter</button>
+          </div>
+
+          <section class="stock-history-section">
+            <div class="stock-history-heading">
+              <div>
+                <p class="eyebrow">Mouvements de stock</p>
+                <h3>Historique des achats</h3>
+              </div>
+              <span id="purchase-history-count" class="subtle"></span>
+            </div>
+            <div class="stock-history-controls">
+              <div id="purchase-date-filter" class="shared-date-filter"></div>
+              <div class="purchase-history-product-filter">
+                <label for="purchase-history-product-search"><span>Produit</span></label>
+                <div class="pertes-product-picker" id="purchase-history-product-picker">
+                  <input id="purchase-history-product-search" type="search" placeholder="Rechercher un produit"
+                    autocomplete="off" />
+                  <button type="button" id="clear-purchase-history-product" class="pertes-product-clear hidden"
+                    aria-label="Effacer le produit">&times;</button>
+                  <div id="purchase-history-product-options" class="pertes-product-options hidden" role="listbox"></div>
                 </div>
-                <span id="purchase-count" class="cart-count">0 article</span>
               </div>
+            </div>
+            <div id="purchase-history-list" class="purchase-history-list" aria-live="polite"></div>
+          </section>
 
-              <div id="purchase-cart-items" class="cart-items"></div>
-
-              <div class="totals-box">
-                <div class="total-row grand-total"><span>Total de l’achat</span><strong id="purchase-total-value">0 F CFA</strong></div>
+          <div id="purchase-editor-modal" class="modal product-editor-modal hidden" role="dialog" aria-modal="true"
+            aria-labelledby="purchase-editor-title">
+            <div class="modal-content product-editor-panel purchase-editor-panel">
+              <div class="products-section-heading editor-modal-heading">
+                <div>
+                  <p class="section-kicker">Stock</p>
+                  <h3 id="purchase-editor-title">Ajouter au stock</h3>
+                </div>
+                <button type="button" id="close-purchase-editor" class="icon-btn" aria-label="Fermer"
+                  title="Fermer">&times;</button>
               </div>
-
-              <div class="sale-form">
-                <div class="form-section-title">Fournisseur</div>
-                <label class="field-wide">
-                  <span>Nom du fournisseur <span class="subtle">(facultatif)</span></span>
-                  <input id="purchase-supplier" type="text" placeholder="ex. Marché de gros" autocomplete="off" />
-                </label>
-                <p class="pos-return-note">Le stock sera augmenté des quantités reçues. Le prix saisi est le prix d’achat, pas le prix de vente.</p>
-                <button id="complete-purchase-btn" class="primary-btn">Enregistrer l’achat</button>
+              <div class="purchase-editor-body">
+                <div class="purchase-selector-block">
+                  <label><span>Produit</span><span class="purchase-product-field"><input id="purchase-product-search"
+                        type="search" placeholder="Rechercher un produit..." autocomplete="off" /><button type="button"
+                        id="clear-purchase-product" class="purchase-product-clear hidden"
+                        aria-label="Effacer le produit">&times;</button></span></label>
+                  <div id="purchase-product-list" class="purchase-product-options" translate="no"></div>
+                </div>
+                <div id="purchase-cart-items" class="purchase-editor-line"></div>
+                <label class="purchase-quantity-field"><span>Quantité à ajouter</span><input id="purchase-quantity"
+                    type="number" min="1" step="1" value="1" required /></label>
+                <label class="purchase-date-field"><span>Date</span><input id="purchase-date" type="date"
+                    required /></label>
                 <div id="purchase-message" class="message-box"></div>
+                <div class="modal-actions-row"><button type="button" id="cancel-purchase-editor"
+                    class="secondary-btn">Annuler</button><button id="complete-purchase-btn"
+                    class="primary-btn">Enregistrer</button></div>
               </div>
             </div>
           </div>
-          </div>
-        </section>
+        </div>
+      </section>
 
-        <section id="customers" class="tab-panel">
-          <header class="panel-header">
-            <div>
-              <p class="eyebrow">Contacts</p>
-              <h2>Clients</h2>
-            </div>
-          </header>
-
-          <div id="client-route-view"></div>
-        </section>
-
-        <section id="expenses" class="tab-panel">
-          <header class="panel-header">
-            <div>
-              <p class="eyebrow">Suivi interne</p>
-              <h2>Dépenses</h2>
-              <p class="page-subtitle">Les sorties d’argent qui ne passent pas par le stock : salaires, réparations, améliorations.</p>
-            </div>
-            <div class="report-header-actions">
-              <button type="button" id="add-expense-btn" class="primary-btn">+ Nouvelle dépense</button>
-            </div>
-          </header>
-
-          <div class="card report-controls">
-            <div class="report-mode-toggle" role="group" aria-label="Période des dépenses">
-              <button type="button" class="pos-mode-btn" data-expense-mode="day" aria-pressed="false">Par jour</button>
-              <button type="button" class="pos-mode-btn" data-expense-mode="range" aria-pressed="false">Par période</button>
-              <button type="button" class="pos-mode-btn active" data-expense-mode="all" aria-pressed="true">Tout</button>
-            </div>
-
-            <div class="report-date-fields">
-              <label id="expense-day-field" class="hidden"><span>Date</span><input type="date" id="expense-filter-day" /></label>
-              <label id="expense-start-field" class="hidden"><span>Du</span><input type="date" id="expense-filter-start" /></label>
-              <label id="expense-end-field" class="hidden"><span>Au</span><input type="date" id="expense-filter-end" /></label>
-            </div>
-
-            <div class="report-category-field">
-              <span class="report-field-label">Type</span>
-              <!-- Chips are rendered from EXPENSE_TYPES so the filter and the
-                   editor's dropdown can never offer different types. -->
-              <div id="expense-type-chips" class="report-categories" role="group" aria-label="Type de dépense"></div>
-            </div>
-          </div>
-
-          <div id="expense-view"></div>
-        </section>
-
-        <section id="reports" class="tab-panel">
-          <header class="panel-header">
-            <div>
-              <p class="eyebrow">Suivi interne</p>
-              <h2>Rapports</h2>
-              <p class="page-subtitle">Tous les mouvements d’une journée ou d’une période : ventes, achats, retours et pertes. Les dépenses comptent dans le décaissé et se gèrent dans leur onglet.</p>
-            </div>
-            <div class="report-header-actions">
-              <button type="button" id="export-report-btn" class="secondary-btn">Exporter en PDF</button>
-            </div>
-          </header>
-
-          <div class="card report-controls">
-            <div class="report-mode-toggle" role="group" aria-label="Période du rapport">
-              <button type="button" class="pos-mode-btn active" data-report-mode="day" aria-pressed="true">Par jour</button>
-              <button type="button" class="pos-mode-btn" data-report-mode="range" aria-pressed="false">Par période</button>
-            </div>
-
-            <div class="report-date-fields">
-              <label id="report-day-field"><span>Date</span><input type="date" id="report-day" /></label>
-              <label id="report-start-field" class="hidden"><span>Du</span><input type="date" id="report-start" /></label>
-              <label id="report-end-field" class="hidden"><span>Au</span><input type="date" id="report-end" /></label>
-            </div>
-
-            <div class="report-customer-field">
-              <label for="report-customer">Client</label>
-              <input id="report-customer" type="search" placeholder="Tous les clients" autocomplete="off" />
-              <div id="report-customer-suggestions" class="history-suggestions hidden" translate="no"></div>
-            </div>
-
-            <div class="report-category-field">
-              <span class="report-field-label">Catégorie</span>
-              <div class="report-categories" role="group" aria-label="Catégorie">
-                <button type="button" class="report-chip active" data-report-category="all" aria-pressed="true">Tout</button>
-                <button type="button" class="report-chip" data-report-category="money" aria-pressed="false">Argent</button>
-                <button type="button" class="report-chip" data-report-category="sale" aria-pressed="false">Ventes</button>
-                <button type="button" class="report-chip" data-report-category="purchase" aria-pressed="false">Achats</button>
-                <button type="button" class="report-chip" data-report-category="return" aria-pressed="false">Retours</button>
-                <button type="button" class="report-chip" data-report-category="payment" aria-pressed="false">Paiements</button>
-                <button type="button" class="report-chip" data-report-category="waste" aria-pressed="false">Pertes</button>
-                <button type="button" class="report-chip" data-report-category="adjustment" aria-pressed="false">Ajustements</button>
-              </div>
-            </div>
-          </div>
-
-          <div id="report-view"></div>
-        </section>
-
-      </main>
-    </div>
-
-    <div id="expense-editor-modal" class="modal product-editor-modal hidden" role="dialog" aria-modal="true" aria-labelledby="expense-form-title">
-      <div class="modal-content expense-editor-panel">
-        <div class="products-section-heading editor-modal-heading">
+      <section id="customers" class="tab-panel">
+        <header class="panel-header">
           <div>
-            <p class="section-kicker">Dépense</p>
-            <h3 id="expense-form-title">Nouvelle dépense</h3>
+            <p class="eyebrow">Contacts</p>
+            <h2>Clients</h2>
           </div>
-          <div class="editor-modal-actions">
-            <button type="button" id="close-expense-editor" class="icon-btn" aria-label="Fermer" title="Fermer">&times;</button>
-          </div>
-        </div>
-        <form id="expense-form" class="stack-form">
-          <label>
-            <span>Type de dépense</span>
-            <select id="expense-type" required>
-              <option value="Salaires">Salaires</option>
-              <option value="Réparation / Maintenance">Réparation / Maintenance</option>
-              <option value="Amélioration / Mise à niveau">Amélioration / Mise à niveau</option>
-              <option value="Autre">Autre</option>
-            </select>
-          </label>
-          <label>
-            <span>Montant</span>
-            <input id="expense-amount" type="number" min="0.01" step="0.01" placeholder="0" required />
-          </label>
-          <label>
-            <span>Date</span>
-            <input id="expense-date" type="date" required />
-          </label>
-          <label>
-            <span>Note <span class="subtle">(facultatif)</span></span>
-            <textarea id="expense-note" rows="3" placeholder="Détails de la dépense"></textarea>
-          </label>
-          <div id="expense-form-message" class="message-box"></div>
-          <button type="submit" class="primary-btn">Enregistrer</button>
-          <button type="button" id="cancel-expense-edit" class="secondary-btn">Annuler</button>
-        </form>
-      </div>
-    </div>
-
-    <div id="expense-details-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="expense-details-title">
-      <div class="modal-content">
-        <p class="eyebrow">Détails de la dépense</p>
-        <h3 id="expense-details-title">Dépense</h3>
-        <div id="expense-details-body" class="expense-details-body"></div>
-        <div class="modal-actions">
-          <button id="close-expense-details" class="secondary-btn">Retour</button>
-          <button id="edit-expense-from-details" class="primary-btn">Modifier</button>
-        </div>
-      </div>
-    </div>
-
-    <div id="expense-delete-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="expense-delete-title">
-      <div class="modal-content">
-        <p class="eyebrow">Action définitive</p>
-        <h3 id="expense-delete-title">Supprimer cette dépense ?</h3>
-        <p id="expense-delete-text">Voulez-vous vraiment supprimer cette dépense ?</p>
-        <div class="modal-actions">
-          <button id="cancel-expense-delete" class="secondary-btn">Annuler</button>
-          <button id="confirm-expense-delete" class="danger-btn">Supprimer</button>
-        </div>
-      </div>
-    </div>
-
-    <div id="customer-editor-modal" class="modal product-editor-modal hidden" role="dialog" aria-modal="true" aria-labelledby="customer-form-title">
-      <div class="modal-content customer-editor-panel">
-        <div class="products-section-heading editor-modal-heading">
-          <div>
-            <p class="section-kicker">Fiche client</p>
-            <h3 id="customer-form-title">Ajouter un client</h3>
-          </div>
-          <div class="editor-modal-actions">
-            <button type="button" id="close-customer-editor" class="icon-btn" aria-label="Fermer" title="Fermer">&times;</button>
-          </div>
-        </div>
-        <form id="customer-form" class="stack-form">
-          <input id="customer-name" type="text" placeholder="Nom complet" required />
-          <input id="customer-phone" type="tel" placeholder="Numéro de téléphone" required />
-          <input id="customer-address" type="text" placeholder="Adresse (facultatif)" />
-          <button type="submit" class="primary-btn">Enregistrer le client</button>
-          <button type="button" id="cancel-customer-edit" class="secondary-btn hidden">Annuler</button>
-        </form>
-      </div>
-    </div>
-
-    <div id="payment-modal" class="modal product-editor-modal hidden" role="dialog" aria-modal="true" aria-labelledby="payment-modal-title">
-      <div class="modal-content payment-panel">
-        <header class="modal-head">
-          <div>
-            <p class="section-kicker" id="payment-scope-kicker">Dette client</p>
-            <h3 id="payment-modal-title">Enregistrer un paiement</h3>
-            <span class="subtle" id="payment-modal-customer"></span>
-          </div>
-          <button type="button" id="close-payment-modal" class="icon-btn" aria-label="Fermer" title="Fermer">&times;</button>
         </header>
 
-        <form id="payment-form" class="stack-form">
-          <div class="payment-balance-line">
-            <span id="payment-outstanding-label">Dette en cours</span>
-            <strong id="payment-outstanding">0</strong>
+        <div id="client-route-view"></div>
+      </section>
+
+      <section id="reports" class="tab-panel">
+        <header class="panel-header">
+          <div>
+            <p class="eyebrow">Suivi interne</p>
+            <h2>Rapports</h2>
+            <p class="page-subtitle">Ventes et retours sur une journée ou une période.</p>
+          </div>
+          <div class="report-header-actions">
+            <button type="button" id="export-report-btn" class="secondary-btn">Exporter en PDF</button>
+          </div>
+        </header>
+
+        <div class="card report-controls">
+          <div id="report-shared-date-filter" class="shared-date-filter"></div>
+
+          <div class="report-customer-field">
+            <label for="report-customer">Client</label>
+            <input id="report-customer" type="search" placeholder="Tous les clients" autocomplete="off" />
+            <div id="report-customer-suggestions" class="history-suggestions hidden" translate="no"></div>
           </div>
 
-          <label>
-            <span>Montant reçu</span>
-            <input id="payment-amount" type="number" min="0.01" step="0.01" placeholder="0" required />
-          </label>
-          <button type="button" id="payment-pay-all" class="link-btn">Régler la totalité</button>
-
-          <div class="payment-allocation" id="payment-allocation">
-            <h4>Imputation</h4>
-            <p class="subtle payment-allocation-hint">Le montant règle les factures impayées de la plus ancienne à la plus récente.</p>
-            <div id="payment-allocation-list"></div>
+          <div class="report-category-field">
+            <span class="report-field-label">Type</span>
+            <div class="report-categories" role="group" aria-label="Type de transaction">
+              <button type="button" class="report-chip active" data-report-category="all"
+                aria-pressed="true">Tout</button>
+              <button type="button" class="report-chip" data-report-category="sale" aria-pressed="false">Ventes</button>
+              <button type="button" class="report-chip" data-report-category="return"
+                aria-pressed="false">Retours</button>
+            </div>
           </div>
+        </div>
 
-          <div id="payment-message" class="message-box"></div>
+        <div id="report-view"></div>
+      </section>
 
-          <div class="modal-actions">
-            <button type="button" id="cancel-payment-btn" class="secondary-btn">Annuler</button>
-            <button type="submit" id="confirm-payment-btn" class="primary-btn">Enregistrer le paiement</button>
+    </main>
+  </div>
+
+  <div id="perte-editor-modal" class="modal product-editor-modal hidden" role="dialog" aria-modal="true"
+    aria-labelledby="perte-form-title">
+    <div class="modal-content product-editor-panel">
+      <div class="products-section-heading editor-modal-heading">
+        <div>
+          <p class="section-kicker">Perte</p>
+          <h3 id="perte-form-title">Nouvelle perte</h3>
+        </div>
+        <div class="editor-modal-actions">
+          <button type="button" id="close-perte-editor" class="icon-btn" aria-label="Fermer"
+            title="Fermer">&times;</button>
+        </div>
+      </div>
+      <form id="perte-form" class="stack-form">
+        <label>
+          <span>Produit</span>
+          <div class="perte-product-picker" id="perte-product-picker">
+            <input id="perte-product" type="hidden" required />
+            <input id="perte-product-search" type="search" placeholder="Rechercher un produit..." autocomplete="off"
+              aria-label="Rechercher un produit" aria-controls="perte-product-options" aria-expanded="false" />
+            <div id="perte-product-options" class="perte-product-options hidden" role="listbox"></div>
           </div>
-        </form>
-      </div>
-    </div>
-
-    <div id="sale-confirm-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="sale-confirm-title">
-      <div class="modal-content">
-        <p class="eyebrow">Dernière vérification</p>
-        <h3 id="sale-confirm-title">Finaliser cette vente ?</h3>
-        <p id="sale-confirm-text">Vérifiez la vente avant de la finaliser.</p>
-        <div class="modal-actions">
-          <button id="cancel-sale-btn" class="secondary-btn">Annuler</button>
-          <button id="confirm-sale-btn" class="primary-btn">Confirmer</button>
+        </label>
+        <label>
+          <span>Quantité</span>
+          <input id="perte-quantity" type="number" min="1" step="1" required />
+        </label>
+        <label>
+          <span>Motif</span>
+          <select id="perte-reason" required></select>
+        </label>
+        <label>
+          <span>Date</span>
+          <input id="perte-date" type="date" required />
+        </label>
+        <label>
+          <span>Note</span>
+          <textarea id="perte-note" rows="3" placeholder="Optionnel"></textarea>
+        </label>
+        <div id="perte-form-message" class="message-box" aria-live="polite"></div>
+        <div class="modal-actions-row">
+          <button type="submit" id="perte-submit-btn" class="primary-btn">Enregistrer</button>
+          <button type="button" id="cancel-perte-edit" class="secondary-btn">Annuler</button>
         </div>
-      </div>
-    </div>
-
-    <div id="report-print-sheet" class="print-target report-print-sheet" aria-hidden="true"></div>
-
-    <div id="receipt-modal" class="modal hidden print-target" role="dialog" aria-modal="true" aria-labelledby="receipt-title">
-      <div class="modal-content receipt-modal-content printable-invoice">
-        <div id="receipt-content"></div>
-        <div class="modal-actions">
-          <button id="close-receipt-btn" class="secondary-btn">Fermer</button>
-          <button id="print-receipt-btn" class="primary-btn">Imprimer la facture</button>
-        </div>
-      </div>
-    </div>
-
-    <div id="delete-sale-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="delete-sale-title">
-      <div class="modal-content">
-        <p class="eyebrow">Action définitive</p>
-        <h3 id="delete-sale-title">Supprimer cette vente ?</h3>
-        <p id="delete-sale-text">La vente sera supprimée et le stock ainsi que les totaux du client seront rétablis.</p>
-        <div class="modal-actions">
-          <button id="cancel-delete-sale-btn" class="secondary-btn">Annuler</button>
-          <button id="confirm-delete-sale-btn" class="danger-btn">Supprimer la vente</button>
-        </div>
-      </div>
-    </div>
-
-    <div id="save-status" class="save-status" role="status" aria-live="polite" hidden></div>
-
-    <div id="login-overlay" class="login-overlay" role="dialog" aria-modal="true" aria-labelledby="login-title" hidden>
-      <form id="login-form" class="login-card" autocomplete="on">
-        <img class="login-logo" src="/pics/logo.png" alt="Logo H.H Fruit" />
-        <p class="eyebrow">Accès sécurisé</p>
-        <h2 id="login-title">Connexion</h2>
-        <label for="login-username">Identifiant</label>
-        <input id="login-username" name="username" type="text" autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false" required />
-        <label for="login-password">Mot de passe</label>
-        <input id="login-password" name="password" type="password" autocomplete="current-password" required />
-        <p id="login-error" class="login-error" role="alert" hidden></p>
-        <button id="login-submit" type="submit" class="primary-btn login-submit">Se connecter</button>
       </form>
     </div>
+  </div>
 
-    <script src="/app.js?v=40"></script>
-  </body>
+  <div id="perte-details-modal" class="modal product-editor-modal hidden" role="dialog" aria-modal="true"
+    aria-labelledby="perte-details-title">
+    <div class="modal-content expense-editor-panel">
+      <div class="products-section-heading editor-modal-heading">
+        <div>
+          <p class="section-kicker">Détail</p>
+          <h3 id="perte-details-title">Perte</h3>
+        </div>
+        <div class="editor-modal-actions">
+          <button type="button" id="close-perte-details" class="icon-btn" aria-label="Fermer"
+            title="Fermer">&times;</button>
+        </div>
+      </div>
+      <div id="perte-details-body" class="stack-form"></div>
+      <div class="modal-actions-row">
+        <button type="button" id="edit-perte-from-details" class="secondary-btn">Modifier</button>
+        <button type="button" id="delete-perte-from-details" class="danger-btn">Supprimer</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="perte-delete-modal" class="modal product-editor-modal hidden" role="dialog" aria-modal="true">
+    <div class="modal-content small-modal-panel">
+      <div class="products-section-heading editor-modal-heading">
+        <div>
+          <p class="section-kicker">Confirmation</p>
+          <h3>Supprimer la perte</h3>
+        </div>
+      </div>
+      <p id="perte-delete-text">Voulez-vous vraiment supprimer cette perte ?</p>
+      <div class="modal-actions-row">
+        <button type="button" id="confirm-perte-delete" class="danger-btn">Supprimer</button>
+        <button type="button" id="cancel-perte-delete" class="secondary-btn">Annuler</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="customer-editor-modal" class="modal product-editor-modal hidden" role="dialog" aria-modal="true"
+    aria-labelledby="customer-form-title">
+    <div class="modal-content customer-editor-panel">
+      <div class="products-section-heading editor-modal-heading">
+        <div>
+          <p class="section-kicker">Fiche client</p>
+          <h3 id="customer-form-title">Ajouter un client</h3>
+        </div>
+        <div class="editor-modal-actions">
+          <button type="button" id="close-customer-editor" class="icon-btn" aria-label="Fermer"
+            title="Fermer">&times;</button>
+        </div>
+      </div>
+      <form id="customer-form" class="stack-form">
+        <input id="customer-name" type="text" placeholder="Nom complet" required />
+        <input id="customer-phone" type="tel" placeholder="Numéro de téléphone" required />
+        <input id="customer-address" type="text" placeholder="Adresse (facultatif)" />
+        <button type="submit" class="primary-btn">Enregistrer le client</button>
+        <button type="button" id="cancel-customer-edit" class="secondary-btn hidden">Annuler</button>
+      </form>
+    </div>
+  </div>
+
+  <div id="payment-modal" class="modal product-editor-modal hidden" role="dialog" aria-modal="true"
+    aria-labelledby="payment-modal-title">
+    <div class="modal-content payment-panel">
+      <header class="modal-head">
+        <div>
+          <p class="section-kicker">Facture à crédit</p>
+          <h3 id="payment-modal-title">Enregistrer un paiement</h3>
+          <span class="subtle" id="payment-modal-customer"></span>
+        </div>
+        <button type="button" id="close-payment-modal" class="icon-btn" aria-label="Fermer"
+          title="Fermer">&times;</button>
+      </header>
+
+      <form id="payment-form" class="stack-form">
+        <div class="payment-balance-line">
+          <span>Reste à payer</span>
+          <strong id="payment-outstanding">0</strong>
+        </div>
+
+        <label>
+          <span>Montant reçu</span>
+          <input id="payment-amount" type="number" min="0.01" step="0.01" placeholder="0" required />
+        </label>
+        <label>
+          <span>Date du paiement</span>
+          <input id="payment-date" type="date" required />
+        </label>
+        <button type="button" id="payment-pay-all" class="link-btn">Régler la totalité</button>
+
+        <div id="payment-message" class="message-box"></div>
+
+        <div class="modal-actions">
+          <button type="button" id="cancel-payment-btn" class="secondary-btn">Annuler</button>
+          <button type="submit" id="confirm-payment-btn" class="primary-btn">Enregistrer le paiement</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div id="sale-confirm-modal" class="modal hidden" role="dialog" aria-modal="true"
+    aria-labelledby="sale-confirm-title">
+    <div class="modal-content">
+      <p class="eyebrow">Dernière vérification</p>
+      <h3 id="sale-confirm-title">Finaliser cette vente ?</h3>
+      <p id="sale-confirm-text">Vérifiez la vente avant de la finaliser.</p>
+      <div class="modal-actions">
+        <button id="cancel-sale-btn" class="secondary-btn">Annuler</button>
+        <button id="confirm-sale-btn" class="primary-btn">Confirmer</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="report-print-sheet" class="print-target report-print-sheet" aria-hidden="true"></div>
+
+  <div id="receipt-modal" class="modal hidden print-target" role="dialog" aria-modal="true"
+    aria-labelledby="receipt-title">
+    <div class="modal-content receipt-modal-content printable-invoice">
+      <div id="receipt-content"></div>
+      <div class="modal-actions">
+        <button id="close-receipt-btn" class="secondary-btn">Fermer</button>
+        <button id="print-receipt-btn" class="primary-btn">Imprimer la facture</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="delete-sale-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="delete-sale-title">
+    <div class="modal-content">
+      <p class="eyebrow">Action définitive</p>
+      <h3 id="delete-sale-title">Supprimer cette vente ?</h3>
+      <p id="delete-sale-text">La vente sera supprimée et le stock ainsi que les totaux du client seront rétablis.</p>
+      <div class="modal-actions">
+        <button id="cancel-delete-sale-btn" class="secondary-btn">Annuler</button>
+        <button id="confirm-delete-sale-btn" class="danger-btn">Supprimer la vente</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="save-status" class="save-status" role="status" aria-live="polite" hidden></div>
+
+  <div id="login-overlay" class="login-overlay" role="dialog" aria-modal="true" aria-labelledby="login-title" hidden>
+    <form id="login-form" class="login-card" autocomplete="on">
+      <img class="login-logo" src="/pics/logo.png" alt="Logo H.H Fruit" />
+      <p class="eyebrow">Accès sécurisé</p>
+      <h2 id="login-title">Connexion</h2>
+      <label for="login-username">Identifiant</label>
+      <input id="login-username" name="username" type="text" autocomplete="username" autocapitalize="none"
+        autocorrect="off" spellcheck="false" required />
+      <label for="login-password">Mot de passe</label>
+      <input id="login-password" name="password" type="password" autocomplete="current-password" required />
+      <p id="login-error" class="login-error" role="alert" hidden></p>
+      <button id="login-submit" type="submit" class="primary-btn login-submit">Se connecter</button>
+    </form>
+  </div>
+
+  <script src="/app.js?v=40"></script>
+</body>
+
 </html>

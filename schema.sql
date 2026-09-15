@@ -72,6 +72,9 @@ CREATE TABLE IF NOT EXISTS sales (
   supplier TEXT NOT NULL DEFAULT '',
   -- Waste only: why it was written off.
   reason TEXT NOT NULL DEFAULT '',
+  -- Optional text attached to a record, used by stock-losses when the operator
+  -- wants to explain what happened beyond the reason code.
+  note TEXT NOT NULL DEFAULT '',
   -- Returns only: the part of the refund that left the till in cash, i.e. what
   -- was left after the customer's outstanding debt had been credited.
   cash_refund NUMERIC(12, 2) NOT NULL DEFAULT 0
@@ -89,6 +92,7 @@ ALTER TABLE sales ADD COLUMN IF NOT EXISTS discount_percent NUMERIC(5, 2) NOT NU
 ALTER TABLE sales ALTER COLUMN payment_method DROP NOT NULL;
 ALTER TABLE sales ADD COLUMN IF NOT EXISTS supplier TEXT NOT NULL DEFAULT '';
 ALTER TABLE sales ADD COLUMN IF NOT EXISTS reason TEXT NOT NULL DEFAULT '';
+ALTER TABLE sales ADD COLUMN IF NOT EXISTS note TEXT NOT NULL DEFAULT '';
 ALTER TABLE sales ADD COLUMN IF NOT EXISTS cash_refund NUMERIC(12, 2) NOT NULL DEFAULT 0;
 
 -- The type CHECK is replaced rather than added to, so re-running this file after

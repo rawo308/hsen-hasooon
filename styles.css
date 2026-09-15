@@ -160,6 +160,125 @@ p {
   margin-bottom: 22px;
 }
 
+.dashboard-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 22px;
+}
+
+.dashboard-stat-card {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  padding: 14px 15px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+}
+
+.dashboard-stat-card>span {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.dashboard-stat-card strong {
+  font-size: 1.24rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.dashboard-stat-card small,
+.dashboard-transaction-row small {
+  color: var(--muted);
+  font-size: 0.76rem;
+}
+
+.dashboard-history-section {
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel);
+}
+
+.dashboard-section-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.dashboard-section-heading h3 {
+  margin: 0;
+  font-size: 1.08rem;
+}
+
+.dashboard-section-heading .section-kicker {
+  margin-bottom: 4px;
+}
+
+.dashboard-history-list {
+  max-height: min(48vh, 430px);
+  overflow-y: auto;
+  border-top: 1px solid var(--line);
+}
+
+.dashboard-transaction-row {
+  display: grid;
+  grid-template-columns: minmax(145px, 1.1fr) minmax(130px, 1fr) minmax(110px, auto) minmax(110px, auto) auto;
+  align-items: center;
+  width: 100%;
+  gap: 12px;
+  padding: 11px 3px;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+}
+
+.dashboard-transaction-row:hover,
+.dashboard-transaction-row:focus-visible {
+  background: var(--panel-soft);
+  outline: none;
+}
+
+.dashboard-transaction-row>span {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.dashboard-transaction-row>strong {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.dashboard-transaction-type,
+.dashboard-transaction-status {
+  color: var(--success);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.dashboard-transaction-type.is-return {
+  color: var(--warning);
+}
+
+.dashboard-transaction-action {
+  color: var(--accent);
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.dashboard-empty {
+  margin: 0;
+  padding: 24px 4px 8px;
+  color: var(--muted);
+}
+
 .stat-card {
   background: var(--panel);
   border: 1px solid var(--line);
@@ -951,6 +1070,60 @@ textarea {
   font-weight: inherit;
 }
 
+.perte-product-picker {
+  position: relative;
+}
+
+.perte-product-picker input[type="search"] {
+  padding-right: 38px;
+}
+
+.perte-product-options {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  max-height: 250px;
+  overflow-y: auto;
+  padding: 6px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+  box-shadow: var(--shadow);
+}
+
+.perte-product-option {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  width: 100%;
+  padding: 10px 11px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.perte-product-option:hover,
+.perte-product-option:focus-visible {
+  background: var(--accent-panel);
+  outline: none;
+}
+
+.perte-product-option small {
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.perte-product-empty {
+  margin: 8px;
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
 .editor-section {
   display: flex;
   flex-direction: column;
@@ -1466,19 +1639,6 @@ textarea {
 
 .profile-section-heading-row h4 {
   margin: 0;
-}
-
-.history-date-filter {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.history-date-filter input[type="date"] {
-  width: auto;
-  padding: 7px 10px;
-  font-size: 0.8rem;
-  border-color: var(--accent-line);
 }
 
 .debt-history-section {
@@ -2554,7 +2714,7 @@ textarea {
      long catalogue pushed blank sheets out after the invoice. Taking everything
      out of layout and putting back only the sheet being printed is what keeps an
      invoice to the pages it actually needs. */
-  body > * {
+  body>* {
     display: none !important;
   }
 
@@ -2948,6 +3108,211 @@ textarea {
   box-shadow: var(--shadow);
 }
 
+.history-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.perte-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  width: 100%;
+  padding: 15px 16px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+  box-shadow: 0 3px 12px rgba(20, 55, 38, 0.04);
+  transition: border-color 0.15s ease, background 0.15s ease, transform 0.15s ease;
+}
+
+.perte-row:hover {
+  border-color: var(--accent-line);
+  background: var(--accent-panel);
+  transform: translateY(-1px);
+}
+
+.perte-row-main {
+  display: grid;
+  grid-template-columns: minmax(92px, 0.8fr) minmax(170px, 1.5fr) minmax(76px, 0.55fr) minmax(130px, 0.9fr);
+  align-items: center;
+  gap: 22px;
+  min-width: 0;
+  flex: 1;
+}
+
+.perte-row-main>div {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.perte-row-label {
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.perte-row-product strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.perte-row-quantity strong {
+  font-size: 1.05rem;
+}
+
+.perte-row-quantity small {
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+.perte-reason-pill {
+  width: fit-content;
+  max-width: 100%;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+  font-size: 0.76rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.perte-row-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+#stock-pertes>.report-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 14px;
+  padding: 10px 12px;
+}
+
+.pertes-product-filter {
+  display: grid;
+  gap: 5px;
+  min-width: min(280px, 100%);
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.pertes-product-picker {
+  position: relative;
+}
+
+.pertes-product-picker input {
+  min-height: 36px;
+  padding: 8px 34px 8px 11px;
+}
+
+.pertes-product-clear {
+  position: absolute;
+  top: 50%;
+  right: 8px;
+  width: 22px;
+  height: 22px;
+  transform: translateY(-50%);
+  border: 0;
+  border-radius: 50%;
+  background: var(--panel-soft);
+  color: var(--muted);
+  line-height: 1;
+}
+
+.pertes-product-options {
+  position: absolute;
+  z-index: 25;
+  top: calc(100% + 5px);
+  left: 0;
+  right: 0;
+  max-height: 220px;
+  overflow-y: auto;
+  padding: 5px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--panel);
+  box-shadow: var(--shadow);
+}
+
+.pertes-product-option {
+  display: block;
+  width: 100%;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+}
+
+.pertes-product-option:hover,
+.pertes-product-option:focus-visible {
+  background: var(--accent-panel);
+  outline: none;
+}
+
+.pertes-product-empty {
+  margin: 7px;
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+#stock-pertes .history-list {
+  max-height: min(52vh, 520px);
+  margin-top: 10px;
+  padding: 4px 6px 4px 0;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--accent-line) var(--panel-soft);
+}
+
+#stock-pertes .perte-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 7px;
+  box-shadow: none;
+  transform: none;
+}
+
+#stock-pertes .perte-row-main {
+  grid-template-columns: minmax(88px, 0.65fr) minmax(150px, 1.5fr) minmax(70px, 0.5fr) minmax(110px, 0.9fr);
+  gap: 12px;
+}
+
+#stock-pertes .perte-row-main>div {
+  gap: 2px;
+}
+
+#stock-pertes .perte-row-label {
+  font-size: 0.62rem;
+}
+
+#stock-pertes .perte-row-actions {
+  gap: 8px;
+}
+
+#stock-pertes .perte-row-actions .link-btn {
+  padding: 3px 0;
+  font-size: 0.74rem;
+}
+
 
 .ledger-page-header,
 .ledger-entity-header,
@@ -3179,40 +3544,6 @@ textarea {
   font-size: 0.9rem;
 }
 
-.compact-date-popover {
-  position: absolute;
-  z-index: 10;
-  right: 0;
-  top: calc(100% + 10px);
-  min-width: 240px;
-  padding: 12px;
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  background: var(--panel);
-  box-shadow: var(--shadow);
-}
-
-.compact-date-picker-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 10px;
-  margin-bottom: 10px;
-}
-
-.compact-date-picker-grid label {
-  display: grid;
-  gap: 4px;
-  color: var(--muted);
-  font-size: 0.72rem;
-}
-
-.compact-date-picker-actions {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 8px;
-}
-
 .ledger-section-heading h4,
 .ledger-payment-history h4 {
   margin: 0;
@@ -3319,23 +3650,6 @@ textarea {
   font-weight: 700;
 }
 
-/* The pay-this-invoice action at the foot of an unpaid invoice. */
-.ledger-invoice-actions {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 8px;
-  margin-top: 22px;
-  padding-top: 18px;
-  border-top: 1px solid var(--line);
-}
-
-.ledger-invoice-actions small {
-  color: var(--muted);
-  font-size: 0.82rem;
-  line-height: 1.45;
-}
-
 .ledger-view-only-note {
   margin-top: 22px;
   padding-top: 14px;
@@ -3347,6 +3661,106 @@ textarea {
 @media (max-width: 760px) {
   .ledger-page {
     padding: 18px 14px;
+  }
+
+  .stock-add-section,
+  .stock-history-heading,
+  .stock-history-controls {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .stock-add-section .primary-btn {
+    width: 100%;
+  }
+
+  .purchase-history-product-filter,
+  .purchase-history-product-filter select {
+    width: 100%;
+  }
+
+  .purchase-history-product-filter {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .purchase-history-row {
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    padding: 13px;
+  }
+
+  .purchase-history-product {
+    grid-column: 1 / -1;
+  }
+
+  .purchase-editor-fields {
+    grid-template-columns: 1fr;
+  }
+
+  .shared-date-quick {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .shared-date-quick>button:not(.calendar-icon-btn) {
+    flex: 1;
+    padding-inline: 7px;
+    font-size: 0.7rem;
+  }
+
+  .shared-date-popover {
+    left: 0;
+  }
+
+  .perte-row {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 12px;
+    padding: 13px;
+  }
+
+  .perte-row-main {
+    grid-template-columns: 1fr 1fr;
+    gap: 12px 16px;
+  }
+
+  .perte-row-actions {
+    justify-content: flex-start;
+    padding-top: 10px;
+    border-top: 1px solid var(--line);
+  }
+
+  #stock-pertes>.report-controls {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .pertes-product-filter {
+    min-width: 0;
+  }
+
+  #stock-pertes .perte-row {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+
+  #stock-pertes .perte-row-main {
+    grid-template-columns: 1fr 1fr;
+    gap: 8px 12px;
+  }
+
+  #stock-pertes .perte-row-product {
+    grid-column: 1 / -1;
+  }
+
+  #stock-pertes .perte-row-actions {
+    justify-content: flex-start;
+    padding-top: 7px;
+  }
+
+  .perte-product-options {
+    max-height: 210px;
   }
 
   .customer-ledger-row {
@@ -3836,7 +4250,7 @@ body.is-loading .main-panel {
 /* --- POS Vente / Retour mode ---------------------------------------------- */
 .pos-mode-toggle {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(2, 1fr);
   gap: 4px;
   margin-bottom: 14px;
   padding: 4px;
@@ -4205,6 +4619,218 @@ body.is-loading .main-panel {
   margin-bottom: 16px;
 }
 
+.shared-date-filter {
+  position: relative;
+  width: fit-content;
+  max-width: 100%;
+}
+
+.shared-date-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.shared-date-select {
+  position: relative;
+}
+
+.shared-date-select-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 142px;
+  min-height: 36px;
+  padding: 7px 11px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--text);
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.shared-date-select-trigger span {
+  margin-left: auto;
+  color: var(--muted);
+}
+
+.shared-date-select-trigger:hover,
+.shared-date-select-trigger[aria-expanded="true"] {
+  border-color: var(--accent-line);
+  background: var(--accent-panel);
+}
+
+.shared-date-select-menu {
+  position: absolute;
+  z-index: 31;
+  top: calc(100% + 6px);
+  left: 0;
+  min-width: 100%;
+  padding: 5px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  box-shadow: var(--shadow);
+}
+
+.shared-date-select-menu button {
+  display: block;
+  width: 100%;
+  padding: 8px 9px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text);
+  font-size: 0.78rem;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.shared-date-select-menu button:hover,
+.shared-date-select-menu button:focus-visible {
+  background: var(--accent-panel);
+  outline: none;
+}
+
+.shared-date-control .calendar-icon-btn {
+  width: 36px;
+  height: 36px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+}
+
+.shared-date-popover {
+  position: absolute;
+  z-index: 30;
+  top: calc(100% + 8px);
+  left: 0;
+  box-sizing: border-box;
+  width: 258px;
+  max-width: calc(100vw - 28px);
+  max-height: min(390px, calc(100vh - 24px));
+  overflow: auto;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel);
+  box-shadow: var(--shadow);
+}
+
+.shared-date-calendar-head,
+.shared-date-selection,
+.shared-date-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.shared-date-calendar-head button {
+  width: 30px;
+  height: 30px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--panel-soft);
+  color: var(--text);
+  font-size: 1.2rem;
+  line-height: 1;
+}
+
+.shared-date-calendar-head strong {
+  text-transform: capitalize;
+}
+
+.shared-date-weekdays,
+.shared-date-calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 1px;
+}
+
+.shared-date-weekdays {
+  margin: 9px 0 3px;
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-align: center;
+}
+
+.shared-date-day {
+  min-height: 27px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  font-size: 0.78rem;
+}
+
+.shared-date-day:hover {
+  background: var(--accent-soft);
+}
+
+.shared-date-day.in-range {
+  border-radius: 0;
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+
+.shared-date-day.selected {
+  position: relative;
+  z-index: 1;
+  border-radius: 50%;
+  background: #2563eb;
+  color: white;
+  font-weight: 800;
+}
+
+.shared-date-empty {
+  min-height: 27px;
+}
+
+.shared-date-selection {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+.shared-date-selection strong {
+  display: block;
+  margin-top: 2px;
+  color: var(--text);
+  font-size: 0.78rem;
+}
+
+.shared-date-actions {
+  margin-top: 8px;
+}
+
+.shared-date-clear {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--panel-soft);
+  color: var(--muted);
+  font-size: 1.1rem;
+  line-height: 1;
+}
+
+.shared-date-clear:hover,
+.shared-date-clear:focus-visible {
+  border-color: var(--accent-line);
+  background: var(--accent-soft);
+  color: var(--text);
+  outline: none;
+}
+
 .report-mode-toggle {
   display: inline-flex;
   gap: 6px;
@@ -4277,6 +4903,35 @@ body.is-loading .main-panel {
   text-transform: capitalize;
 }
 
+.report-totals {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 220px));
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.report-total {
+  display: grid;
+  gap: 6px;
+  padding: 13px 15px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+}
+
+.report-total span {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.report-total strong {
+  font-size: 1.18rem;
+  font-variant-numeric: tabular-nums;
+}
+
 .report-tiles {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(205px, 1fr));
@@ -4330,7 +4985,7 @@ body.is-loading .main-panel {
 }
 
 .report-table-wrap {
-  max-height: min(56vh, 520px);
+  max-height: min(58vh, 560px);
   overflow: auto;
 }
 
@@ -4341,7 +4996,7 @@ body.is-loading .main-panel {
 
 .report-table th,
 .report-table td {
-  padding: 10px 12px;
+  padding: 9px 11px;
   border-bottom: 1px solid var(--line);
   text-align: left;
   font-size: 0.85rem;
@@ -4378,13 +5033,35 @@ body.is-loading .main-panel {
 }
 
 /* One colour per movement, so a column of pills reads at a glance. */
-.report-pill-sale { background: #e8f4e8; color: #1f6a38; }
-.report-pill-purchase { background: #e6effa; color: #1d4e89; }
-.report-pill-return { background: #fdf0e1; color: #92400e; }
-.report-pill-waste { background: #fae8e8; color: #a3231b; }
-.report-pill-expense { background: #f1ecf9; color: #573b8c; }
-.report-pill-payment { background: #e4f3f6; color: #16606e; }
-.report-pill-adjustment { background: #eceff1; color: #4a5b63; }
+.report-pill-sale {
+  background: #e8f4e8;
+  color: #1f6a38;
+}
+
+.report-pill-purchase {
+  background: #e6effa;
+  color: #1d4e89;
+}
+
+.report-pill-return {
+  background: #fdf0e1;
+  color: #92400e;
+}
+
+.report-pill-waste {
+  background: #fae8e8;
+  color: #a3231b;
+}
+
+.report-pill-expense {
+  background: #f1ecf9;
+  color: #573b8c;
+}
+
+.report-pill-adjustment {
+  background: #eceff1;
+  color: #4a5b63;
+}
 
 /* The printable sheet: built on demand, off-screen until the print job runs. */
 .report-print-sheet {
@@ -4595,7 +5272,7 @@ body.is-loading .main-panel {
 
 /* A wide page holding one table row reads as unfinished, so the content stops
    before the screen does. */
-.main-panel > .tab-panel {
+.main-panel>.tab-panel {
   max-width: 1140px;
 }
 
@@ -4666,8 +5343,8 @@ body.is-loading .main-panel {
   transition: opacity 0.12s ease;
 }
 
-tr:hover > .row-actions .link-btn,
-tr:focus-within > .row-actions .link-btn {
+tr:hover>.row-actions .link-btn,
+tr:focus-within>.row-actions .link-btn {
   opacity: 1;
 }
 
@@ -4750,4 +5427,422 @@ tr:focus-within > .row-actions .link-btn {
    sliding left and leaving a gap beside it. */
 .inv-closing-no-tax .inv-settlement {
   grid-column: 2;
+}
+
+.stock-add-section,
+.stock-history-section {
+  padding: 22px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+/* Shared ledger rhythm: compact actions and aligned profile summaries. */
+.ledger-page-header {
+  margin-bottom: 12px;
+}
+
+.ledger-page-actions {
+  gap: 8px;
+}
+
+.ledger-page-actions .secondary-btn,
+.ledger-page-actions .link-btn {
+  min-height: 34px;
+  padding: 7px 12px;
+  border-radius: 8px;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.ledger-page-actions .danger-link {
+  border: 1px solid transparent;
+}
+
+.ledger-entity-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 28px;
+  padding-bottom: 18px;
+}
+
+.ledger-entity-stats {
+  align-items: center;
+  gap: 26px;
+}
+
+.customer-summary-card {
+  min-width: 170px;
+  text-align: right;
+}
+
+.customer-summary-value-row {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.customer-summary-value-row .shared-date-filter {
+  flex: 0 0 auto;
+}
+
+.customer-summary-total {
+  font-size: 1.45rem;
+  letter-spacing: 0;
+}
+
+.ledger-section-heading {
+  margin: 18px 0 8px;
+  min-height: 38px;
+}
+
+.ledger-history-filter-wrap {
+  gap: 8px;
+}
+
+.ledger-history-filter-wrap>span {
+  white-space: nowrap;
+}
+
+.ledger-invoice-list {
+  max-height: min(42vh, 420px);
+}
+
+/* Final compact profile rhythm. Keep both customer metrics in equal columns
+   and keep the purchase amount directly under its date control. */
+.ledger-entity-stats {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(180px, 1fr));
+  align-items: start;
+  gap: 28px;
+  min-width: 390px;
+}
+
+.customer-summary-card {
+  min-width: 0;
+  text-align: left;
+}
+
+.customer-summary-header {
+  justify-content: flex-start;
+  margin-bottom: 7px;
+}
+
+.customer-summary-value-row {
+  display: grid;
+  justify-items: start;
+  gap: 8px;
+}
+
+.customer-summary-value-row .customer-summary-total {
+  margin: 0;
+}
+
+.shared-date-popover {
+  width: 248px;
+  max-height: none;
+  overflow: visible;
+  padding: 8px;
+}
+
+.shared-date-calendar-head button {
+  width: 27px;
+  height: 27px;
+}
+
+.shared-date-weekdays {
+  margin-top: 7px;
+}
+
+.shared-date-day,
+.shared-date-empty {
+  min-height: 24px;
+}
+
+.shared-date-selection {
+  margin-top: 6px;
+  padding-top: 6px;
+}
+
+.shared-date-actions {
+  margin-top: 6px;
+}
+
+@media (max-width: 760px) {
+  .ledger-entity-header {
+    grid-template-columns: 1fr;
+    align-items: stretch;
+    gap: 18px;
+  }
+
+  .ledger-entity-stats {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
+    min-width: 0;
+  }
+
+  .customer-summary-card {
+    min-width: 0;
+    text-align: left;
+  }
+
+  .customer-summary-header,
+  .customer-summary-value-row {
+    justify-content: flex-start;
+  }
+
+  .customer-summary-value-row {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 7px;
+  }
+
+  .ledger-section-heading {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .ledger-history-filter-wrap {
+    width: 100%;
+    justify-content: space-between;
+  }
+}
+
+.stock-add-section,
+.stock-history-heading,
+.stock-history-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.stock-add-section h2,
+.stock-history-heading h3 {
+  margin: 0;
+}
+
+.stock-add-section .page-subtitle {
+  margin-bottom: 0;
+}
+
+.stock-history-controls {
+  justify-content: flex-start;
+  margin-top: 16px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel-soft);
+}
+
+.pertes-history-controls,
+.ledger-history-controls {
+  justify-content: flex-start;
+  margin-top: 12px;
+  margin-bottom: 10px;
+}
+
+.ledger-history-controls {
+  width: fit-content;
+}
+
+.ledger-history-controls .shared-date-filter {
+  flex: 0 0 auto;
+}
+
+.purchase-history-product-filter {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 0.76rem;
+  font-weight: 700;
+}
+
+.purchase-history-product-filter select {
+  min-width: 180px;
+  padding: 8px 10px;
+  background: var(--panel);
+}
+
+.purchase-history-list {
+  display: grid;
+  gap: 8px;
+  max-height: min(52vh, 520px);
+  margin-top: 12px;
+  padding-right: 6px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--accent-line) var(--panel-soft);
+}
+
+.purchase-history-row {
+  display: grid;
+  grid-template-columns: minmax(92px, 0.8fr) minmax(180px, 1.5fr) minmax(100px, 0.8fr) auto;
+  align-items: center;
+  gap: 18px;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--panel);
+}
+
+.purchase-history-row>div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.purchase-history-row span {
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.purchase-history-product strong {
+  line-height: 1.45;
+}
+
+.purchase-history-quantity strong {
+  color: var(--accent-strong);
+  font-size: 1.05rem;
+}
+
+.purchase-history-quantity small {
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+.purchase-history-total strong {
+  color: var(--text);
+}
+
+.purchase-history-actions {
+  display: flex !important;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  white-space: nowrap;
+}
+
+.purchase-history-actions .link-btn {
+  padding: 3px 0;
+  font-size: 0.74rem;
+}
+
+.purchase-editor-panel {
+  max-width: 620px;
+}
+
+.purchase-editor-body {
+  display: grid;
+  gap: 14px;
+}
+
+.purchase-selector-block,
+.purchase-editor-line {
+  display: grid;
+  gap: 8px;
+}
+
+.purchase-selector-block>label,
+.purchase-editor-fields label {
+  display: grid;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.purchase-product-options {
+  display: grid;
+  gap: 5px;
+  max-height: 190px;
+  overflow-y: auto;
+}
+
+.purchase-product-options:empty {
+  display: none;
+}
+
+.purchase-product-options .catalog-item {
+  padding: 9px 11px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel-soft);
+}
+
+.purchase-editor-line .cart-row {
+  margin: 0;
+  padding: 12px;
+  border: 1px solid var(--accent-line);
+  border-radius: 9px;
+  background: var(--accent-panel);
+}
+
+.purchase-quantity-field,
+.purchase-date-field {
+  display: grid;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.purchase-product-field {
+  position: relative;
+  display: block;
+}
+
+.purchase-product-field input {
+  padding-right: 36px;
+}
+
+.purchase-product-clear {
+  position: absolute;
+  top: 50%;
+  right: 9px;
+  width: 22px;
+  height: 22px;
+  transform: translateY(-50%);
+  border: 0;
+  border-radius: 50%;
+  background: var(--panel-soft);
+  color: var(--muted);
+  font-size: 1rem;
+  line-height: 1;
+}
+
+.ledger-invoice-list {
+  margin-top: 0;
+}
+
+@media (max-width: 620px) {
+  .dashboard-summary-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .dashboard-history-section {
+    padding: 14px;
+  }
+
+  .dashboard-history-list {
+    overflow-x: auto;
+  }
+
+  .dashboard-transaction-row {
+    min-width: 620px;
+  }
+
+  .report-totals {
+    grid-template-columns: 1fr;
+  }
+
+  .report-table {
+    min-width: 720px;
+  }
 }
