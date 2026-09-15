@@ -91,7 +91,6 @@ function applyPatch(payload) {
   if (payload.product) upsert(state.products, payload.product);
   if (payload.customer) upsert(state.customers, payload.customer);
   if (payload.sale) upsert(state.sales, payload.sale);
-  if (payload.expense) upsert(state.expenses, payload.expense);
   (payload.products || []).forEach((product) => upsert(state.products, product));
   (payload.sales || []).forEach((sale) => upsert(state.sales, sale));
 }
@@ -355,7 +354,7 @@ function sharedDateFilterMarkup(id) {
       <div class="shared-date-weekdays"><span>L</span><span>M</span><span>M</span><span>J</span><span>V</span><span>S</span><span>D</span></div>
       <div class="shared-date-calendar-grid" data-date-grid></div>
       <div class="shared-date-selection"><span>Début <strong data-date-start>—</strong></span><span>Fin <strong data-date-end>—</strong></span></div>
-      <div class="shared-date-actions"><button type="button" class="primary-btn compact-btn" data-date-apply>Appliquer</button><button type="button" class="link-btn muted" data-date-clear>Effacer</button></div>
+      <div class="shared-date-actions"><button type="button" class="primary-btn compact-btn" data-date-apply>Appliquer</button><button type="button" class="shared-date-clear" data-date-clear aria-label="Effacer la sélection" title="Effacer la sélection">&times;</button></div>
     </div>`;
 }
 
@@ -501,7 +500,6 @@ function ensureStateShape() {
   if (!Array.isArray(state.products)) state.products = [];
   if (!Array.isArray(state.customers)) state.customers = [];
   if (!Array.isArray(state.sales)) state.sales = [];
-  if (!Array.isArray(state.expenses)) state.expenses = [];
   state.customers.forEach((customer) => {
     if (!Array.isArray(customer.debtHistory)) customer.debtHistory = [];
   });
@@ -622,28 +620,10 @@ const POS_MODES = {
     customerTitle: 'Client (facultatif)',
     switchMessage: 'Mode Retour actif. Le stock sera réapprovisionné et le montant remboursé.'
   },
-  waste: {
-    stockLimited: true,
-    wantsCustomer: false,
-    pageTitle: 'Nouvelle perte',
-    pageSubtitle: 'Choisissez les produits perdus, indiquez le motif et enregistrez la perte.',
-    statusPill: 'Mode perte',
-    cartKicker: 'Perte',
-    cartTitle: 'Perte en cours',
-    catalogHint: 'Cliquez sur Ajouter pour déclarer la perte',
-    totalLabel: 'Valeur de la perte',
-    submitLabel: 'Enregistrer la perte',
-    customerTitle: '',
-    switchMessage: 'Mode Perte actif. Les produits seront retirés du stock.'
-  }
 };
 
 function isReturnMode() {
   return posMode === 'return';
-}
-
-function isWasteMode() {
-  return posMode === 'waste';
 }
 
 // True when the cart may not exceed what is on the shelf. A return is the one
@@ -652,7 +632,7 @@ function isStockLimitedMode() {
   return POS_MODES[posMode].stockLimited;
 }
 
-// Switches the register between Vente, Retour and Perte. The cart, catalogue and
+// Switches the register between Vente and Retour. The cart, catalogue and
 // customer picker are shared; only the constraints and wording change.
 function setPosMode(mode) {
   const nextMode = Object.prototype.hasOwnProperty.call(POS_MODES, mode) ? mode : 'sale';
@@ -689,12 +669,10 @@ function setPosMode(mode) {
 function applyPosMode() {
   const mode = POS_MODES[posMode];
   const returning = isReturnMode();
-  const wasting = isWasteMode();
 
   ['cart-area', 'pos'].forEach((id) => {
     const element = document.getElementById(id);
     element?.classList.toggle('is-return-mode', returning);
-    element?.classList.toggle('is-waste-mode', wasting);
   });
   document.querySelectorAll('[data-pos-mode]').forEach((button) => {
     const active = button.dataset.posMode === posMode;
@@ -720,7 +698,6 @@ function applyPosMode() {
   document.getElementById('checkout-discount-row')?.classList.toggle('hidden', posMode !== 'sale');
   document.getElementById('pos-customer-block')?.classList.toggle('hidden', !mode.wantsCustomer);
   document.getElementById('pos-return-note')?.classList.toggle('hidden', !returning);
-  document.getElementById('pos-waste-fields')?.classList.toggle('hidden', !wasting);
   if (posMode !== 'sale') document.getElementById('partial-payment-field')?.classList.add('hidden');
 }
 
@@ -1796,8 +1773,7 @@ function renderClientProfilePage(container, customer) {
         <div class="ledger-entity-stats">
           <div class="customer-summary-card">
             <div class="customer-summary-header"><span>Total acheté</span></div>
-            <div data-purchase-summary-filter class="shared-date-filter"></div>
-            <strong class="customer-summary-total">${formatMoney(purchaseSummaryTotal)}</strong>
+            <div class="customer-summary-value-row"><div data-purchase-summary-filter class="shared-date-filter"></div><strong class="customer-summary-total">${formatMoney(purchaseSummaryTotal)}</strong></div>
           </div>
           <div class="customer-summary-card${owed > 0 ? ' customer-summary-card-owed' : ''}">
             <div class="customer-summary-header"><span>Dette en cours</span></div>
@@ -2317,8 +2293,7 @@ async function handlePaymentSubmit(event) {
 
 const EMPTY_CART_ERRORS = {
   sale: 'Ajoutez au moins un produit à la vente.',
-  return: 'Ajoutez au moins un produit au retour.',
-  waste: 'Ajoutez au moins un produit à la perte.'
+  return: 'Ajoutez au moins un produit au retour.'
 };
 
 function completeSale() {
@@ -2335,18 +2310,6 @@ function completeSale() {
 
   const customerId = selectedPosCustomerId;
   const totalAmount = getCartTotal();
-
-  // A write-off has no counterparty and no tender: products leave the shelf and
-  // the shop absorbs their selling value as the loss.
-  if (isWasteMode()) {
-    const reason = document.getElementById('waste-reason')?.value || 'Autre';
-    pendingSale = { type: 'waste', reason, totalAmount, items: structuredClone(cart) };
-    document.getElementById('sale-confirm-title').textContent = 'Enregistrer cette perte ?';
-    document.getElementById('sale-confirm-text').textContent =
-      `${formatMoney(totalAmount)} · ${plural(cart.length, 'article')} · Motif : ${reason} · Retiré du stock`;
-    document.getElementById('sale-confirm-modal').classList.remove('hidden');
-    return;
-  }
 
   // A return is not a payment: the refund settles the customer's debt first and
   // only the remainder leaves the till, so the client stays optional.
@@ -2394,7 +2357,6 @@ async function confirmSale() {
 
   try {
     if (pendingSale.type === 'return') await confirmReturn();
-    else if (pendingSale.type === 'waste') await confirmWaste();
     else await confirmSaleTransaction();
   } finally {
     isCompletingTransaction = false;
@@ -2454,25 +2416,6 @@ async function confirmReturn() {
       : `${formatMoney(cashed)} rendus en espèces.`;
   showMessage('pos-message', `Retour enregistré. Le stock a été réapprovisionné. ${settlement}`, 'success');
   openReceipt(saved.sale.id);
-}
-
-// A write-off. There is no counterparty and nothing to hand over, so it produces
-// no receipt -- only the stock movement and the recorded loss.
-async function confirmWaste() {
-  const { reason, items } = pendingSale;
-  const saved = await mutate('/sales', 'POST', {
-    type: 'waste',
-    reason,
-    items: items.map((item) => ({ productId: item.productId, quantity: item.quantity }))
-  });
-  if (saved === null) return;
-
-  clearPos();
-  showMessage(
-    'pos-message',
-    `Perte enregistrée : ${formatMoney(saved.sale.totalAmount)}. Les produits ont été retirés du stock.`,
-    'success'
-  );
 }
 
 async function confirmSaleTransaction() {
@@ -2979,9 +2922,7 @@ function summariseReport(rows) {
   // Expenses have no rows on this page any more, and no customer either -- so
   // narrowing the report to one customer takes them out of the totals, exactly as
   // it did when they were rows the filter dropped.
-  const expenseValue = reportFilters.customerId
-    ? 0
-    : getExpensesForFilter(filter).reduce((sum, expense) => sum + Number(expense.amount || 0), 0);
+  const expenseValue = 0;
 
   // Cash in has exactly two sources, and they must not overlap. A cash sale
   // writes no ledger entry, so it is counted from the invoice. Everything else --
@@ -3003,7 +2944,7 @@ function summariseReport(rows) {
     .reduce((sum, row) => sum + Number(row.sale?.cashRefund || 0), 0);
 
   const cashIn = saleCash + debtPaid;
-  const cashOut = totalFor('purchase') + expenseValue + refundCash;
+  const cashOut = totalFor('purchase') + refundCash;
 
   return {
     cashIn,
@@ -3040,7 +2981,7 @@ function reportPeriodLabel() {
 function reportTiles(summary) {
   const money = [
     ['Encaissé', formatMoney(summary.cashIn), 'Ventes réglées et dettes payées'],
-    ['Décaissé', formatMoney(summary.cashOut), 'Achats, dépenses et remboursements'],
+    ['Décaissé', formatMoney(summary.cashOut), 'Achats et remboursements'],
     ['Solde net', formatMoney(summary.net), summary.net >= 0 ? 'Excédent sur la période' : 'Déficit sur la période'],
     ['Total dû', formatMoney(summary.owedNow), 'Dettes clients en cours, toutes périodes'],
     ['Stock faible', summary.lowStockNow, summary.lowStockNow ? 'Produits à réapprovisionner' : 'Stock suffisant partout']
@@ -3232,7 +3173,6 @@ function buildReportSheet() {
     ['Achats', `${summary.unitsBought} art. · ${formatMoney(summary.purchaseValue)}`],
     ['Retours', `${summary.unitsReturned} art. · ${formatMoney(summary.returnValue)}`],
     ['Pertes', `${summary.unitsWasted} article(s) · stock uniquement`],
-    ['Dépenses', formatMoney(summary.expenseValue)]
   ];
 
   return `
@@ -3526,6 +3466,12 @@ function renderAll() {
 }
 
 function setupEventListeners() {
+  document.addEventListener('click', (event) => {
+    if (event.target.closest('.shared-date-filter')) return;
+    document.querySelectorAll('.shared-date-popover:not(.hidden)').forEach((popover) => popover.classList.add('hidden'));
+    document.querySelectorAll('.shared-date-select-menu:not(.hidden)').forEach((menu) => menu.classList.add('hidden'));
+    document.querySelectorAll('.shared-date-select-trigger[aria-expanded="true"]').forEach((trigger) => trigger.setAttribute('aria-expanded', 'false'));
+  });
   document.getElementById('pos-product-search').addEventListener('input', renderPosProducts);
   document.getElementById('pos-customer-search').addEventListener('input', () => {
     selectedPosCustomerId = null;
@@ -3683,7 +3629,6 @@ function setupEventListeners() {
     if (!list || list.classList.contains('hidden')) return;
     if (!list.contains(event.target) && event.target !== input) list.classList.add('hidden');
   });
-  setupExpenseListeners();
   setupPurchaseListeners();
   setupReportListeners();
   renderNav();

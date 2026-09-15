@@ -4636,7 +4636,11 @@ body.is-loading .main-panel {
   z-index: 30;
   top: calc(100% + 8px);
   left: 0;
-  width: min(276px, calc(100vw - 28px));
+  box-sizing: border-box;
+  width: 258px;
+  max-width: calc(100vw - 28px);
+  max-height: min(390px, calc(100vh - 24px));
+  overflow: auto;
   padding: 10px;
   border: 1px solid var(--line);
   border-radius: 12px;
@@ -4732,6 +4736,27 @@ body.is-loading .main-panel {
 
 .shared-date-actions {
   margin-top: 8px;
+}
+
+.shared-date-clear {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--panel-soft);
+  color: var(--muted);
+  font-size: 1.1rem;
+  line-height: 1;
+}
+
+.shared-date-clear:hover,
+.shared-date-clear:focus-visible {
+  border-color: var(--accent-line);
+  background: var(--accent-soft);
+  color: var(--text);
+  outline: none;
 }
 
 .report-mode-toggle {
@@ -5307,6 +5332,120 @@ tr:focus-within>.row-actions .link-btn {
 .stock-history-section {
   padding: 22px 0;
   border-bottom: 1px solid var(--line);
+}
+
+/* Shared ledger rhythm: compact actions and aligned profile summaries. */
+.ledger-page-header {
+  margin-bottom: 12px;
+}
+
+.ledger-page-actions {
+  gap: 8px;
+}
+
+.ledger-page-actions .secondary-btn,
+.ledger-page-actions .link-btn {
+  min-height: 34px;
+  padding: 7px 12px;
+  border-radius: 8px;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.ledger-page-actions .danger-link {
+  border: 1px solid transparent;
+}
+
+.ledger-entity-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 28px;
+  padding-bottom: 18px;
+}
+
+.ledger-entity-stats {
+  align-items: center;
+  gap: 26px;
+}
+
+.customer-summary-card {
+  min-width: 170px;
+  text-align: right;
+}
+
+.customer-summary-value-row {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.customer-summary-value-row .shared-date-filter {
+  flex: 0 0 auto;
+}
+
+.customer-summary-total {
+  font-size: 1.45rem;
+  letter-spacing: 0;
+}
+
+.ledger-section-heading {
+  margin: 18px 0 8px;
+  min-height: 38px;
+}
+
+.ledger-history-filter-wrap {
+  gap: 8px;
+}
+
+.ledger-history-filter-wrap>span {
+  white-space: nowrap;
+}
+
+.ledger-invoice-list {
+  max-height: min(42vh, 420px);
+}
+
+@media (max-width: 760px) {
+  .ledger-entity-header {
+    grid-template-columns: 1fr;
+    align-items: stretch;
+    gap: 18px;
+  }
+
+  .ledger-entity-stats {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
+  }
+
+  .customer-summary-card {
+    min-width: 0;
+    text-align: left;
+  }
+
+  .customer-summary-header,
+  .customer-summary-value-row {
+    justify-content: flex-start;
+  }
+
+  .customer-summary-value-row {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 7px;
+  }
+
+  .ledger-section-heading {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .ledger-history-filter-wrap {
+    width: 100%;
+    justify-content: space-between;
+  }
 }
 
 .stock-add-section,

@@ -24,7 +24,6 @@
         <button class="nav-btn active" data-tab="pos">Caisse</button>
         <button class="nav-btn" data-tab="stock">Stock</button>
         <button class="nav-btn" data-tab="customers">Clients</button>
-        <button class="nav-btn" data-tab="expenses">Dépenses</button>
         <button class="nav-btn" data-tab="reports">Rapports</button>
       </nav>
 
@@ -70,7 +69,6 @@
             <div class="pos-mode-toggle" role="group" aria-label="Type de transaction">
               <button type="button" class="pos-mode-btn active" data-pos-mode="sale" aria-pressed="true">Vente</button>
               <button type="button" class="pos-mode-btn" data-pos-mode="return" aria-pressed="false">Retour</button>
-              <button type="button" class="pos-mode-btn" data-pos-mode="waste" aria-pressed="false">Perte</button>
             </div>
             <div id="cart-items" class="cart-items"></div>
             <div class="totals-box">
@@ -120,20 +118,6 @@
                   <input id="partial-payment-amount" type="number" min="0.01" step="0.01"
                     placeholder="Saisir le montant payé" />
                 </label>
-              </div>
-              <div id="pos-waste-fields" class="pos-waste-fields hidden">
-                <label>
-                  <span>Motif de la perte</span>
-                  <select id="waste-reason">
-                    <option value="Pourriture">Pourriture</option>
-                    <option value="Casse">Casse</option>
-                    <option value="Invendu">Invendu</option>
-                    <option value="Vol">Vol</option>
-                    <option value="Autre">Autre</option>
-                  </select>
-                </label>
-                <p class="pos-return-note">Les produits seront retirés du stock. La perte est valorisée au prix de
-                  vente.</p>
               </div>
               <p id="pos-return-note" class="pos-return-note hidden">Le stock des produits sélectionnés sera
                 réapprovisionné. Le montant est déduit de la dette du client, le reste est rendu en espèces.</p>
@@ -387,55 +371,13 @@
         <div id="client-route-view"></div>
       </section>
 
-      <section id="expenses" class="tab-panel">
-        <header class="panel-header">
-          <div>
-            <p class="eyebrow">Suivi interne</p>
-            <h2>Dépenses</h2>
-            <p class="page-subtitle">Les sorties d’argent qui ne passent pas par le stock : salaires, réparations,
-              améliorations.</p>
-          </div>
-          <div class="report-header-actions">
-            <button type="button" id="add-expense-btn" class="primary-btn">+ Nouvelle dépense</button>
-          </div>
-        </header>
-
-        <div class="card report-controls">
-          <div class="report-mode-toggle shared-date-legacy hidden" role="group" aria-label="Période des dépenses">
-            <button type="button" class="pos-mode-btn" data-expense-mode="day" aria-pressed="false">Par jour</button>
-            <button type="button" class="pos-mode-btn" data-expense-mode="range" aria-pressed="false">Par
-              période</button>
-            <button type="button" class="pos-mode-btn active" data-expense-mode="all" aria-pressed="true">Tout</button>
-          </div>
-
-          <div class="report-date-fields shared-date-legacy hidden">
-            <label id="expense-day-field" class="hidden"><span>Date</span><input type="date"
-                id="expense-filter-day" /></label>
-            <label id="expense-start-field" class="hidden"><span>Du</span><input type="date"
-                id="expense-filter-start" /></label>
-            <label id="expense-end-field" class="hidden"><span>Au</span><input type="date"
-                id="expense-filter-end" /></label>
-          </div>
-          <div id="expense-shared-date-filter" class="shared-date-filter"></div>
-
-          <div class="report-category-field">
-            <span class="report-field-label">Type</span>
-            <!-- Chips are rendered from EXPENSE_TYPES so the filter and the
-                   editor's dropdown can never offer different types. -->
-            <div id="expense-type-chips" class="report-categories" role="group" aria-label="Type de dépense"></div>
-          </div>
-        </div>
-
-        <div id="expense-view"></div>
-      </section>
-
       <section id="reports" class="tab-panel">
         <header class="panel-header">
           <div>
             <p class="eyebrow">Suivi interne</p>
             <h2>Rapports</h2>
             <p class="page-subtitle">Tous les mouvements d’une journée ou d’une période : ventes, achats, retours et
-              pertes. Les dépenses comptent dans le décaissé et se gèrent dans leur onglet.</p>
+              pertes.</p>
           </div>
           <div class="report-header-actions">
             <button type="button" id="export-report-btn" class="secondary-btn">Exporter en PDF</button>
@@ -570,74 +512,6 @@
       <div class="modal-actions-row">
         <button type="button" id="confirm-perte-delete" class="danger-btn">Supprimer</button>
         <button type="button" id="cancel-perte-delete" class="secondary-btn">Annuler</button>
-      </div>
-    </div>
-  </div>
-
-  <div id="expense-editor-modal" class="modal product-editor-modal hidden" role="dialog" aria-modal="true"
-    aria-labelledby="expense-form-title">
-    <div class="modal-content expense-editor-panel">
-      <div class="products-section-heading editor-modal-heading">
-        <div>
-          <p class="section-kicker">Dépense</p>
-          <h3 id="expense-form-title">Nouvelle dépense</h3>
-        </div>
-        <div class="editor-modal-actions">
-          <button type="button" id="close-expense-editor" class="icon-btn" aria-label="Fermer"
-            title="Fermer">&times;</button>
-        </div>
-      </div>
-      <form id="expense-form" class="stack-form">
-        <label>
-          <span>Type de dépense</span>
-          <select id="expense-type" required>
-            <option value="Salaires">Salaires</option>
-            <option value="Réparation / Maintenance">Réparation / Maintenance</option>
-            <option value="Amélioration / Mise à niveau">Amélioration / Mise à niveau</option>
-            <option value="Autre">Autre</option>
-          </select>
-        </label>
-        <label>
-          <span>Montant</span>
-          <input id="expense-amount" type="number" min="0.01" step="0.01" placeholder="0" required />
-        </label>
-        <label>
-          <span>Date</span>
-          <input id="expense-date" type="date" required />
-        </label>
-        <label>
-          <span>Note <span class="subtle">(facultatif)</span></span>
-          <textarea id="expense-note" rows="3" placeholder="Détails de la dépense"></textarea>
-        </label>
-        <div id="expense-form-message" class="message-box"></div>
-        <button type="submit" class="primary-btn">Enregistrer</button>
-        <button type="button" id="cancel-expense-edit" class="secondary-btn">Annuler</button>
-      </form>
-    </div>
-  </div>
-
-  <div id="expense-details-modal" class="modal hidden" role="dialog" aria-modal="true"
-    aria-labelledby="expense-details-title">
-    <div class="modal-content">
-      <p class="eyebrow">Détails de la dépense</p>
-      <h3 id="expense-details-title">Dépense</h3>
-      <div id="expense-details-body" class="expense-details-body"></div>
-      <div class="modal-actions">
-        <button id="close-expense-details" class="secondary-btn">Retour</button>
-        <button id="edit-expense-from-details" class="primary-btn">Modifier</button>
-      </div>
-    </div>
-  </div>
-
-  <div id="expense-delete-modal" class="modal hidden" role="dialog" aria-modal="true"
-    aria-labelledby="expense-delete-title">
-    <div class="modal-content">
-      <p class="eyebrow">Action définitive</p>
-      <h3 id="expense-delete-title">Supprimer cette dépense ?</h3>
-      <p id="expense-delete-text">Voulez-vous vraiment supprimer cette dépense ?</p>
-      <div class="modal-actions">
-        <button id="cancel-expense-delete" class="secondary-btn">Annuler</button>
-        <button id="confirm-expense-delete" class="danger-btn">Supprimer</button>
       </div>
     </div>
   </div>
