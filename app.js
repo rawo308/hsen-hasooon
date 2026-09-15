@@ -3142,14 +3142,6 @@ async function confirmExpenseDelete() {
 function setupExpenseListeners() {
   setupSharedDateFilter(document.getElementById('expense-shared-date-filter'), 'expenses', expenseDateFilter, (filter) => {
     expenseDateFilter = filter;
-    document.getElementById('expense-filter-day').value = filter.mode === 'day' ? filter.start : '';
-    document.getElementById('expense-filter-start').value = filter.start;
-    document.getElementById('expense-filter-end').value = filter.end;
-    document.querySelectorAll('[data-expense-mode]').forEach((button) => {
-      const active = filter.mode === 'all' ? button.dataset.expenseMode === 'all' : button.dataset.expenseMode === (filter.mode === 'day' ? 'day' : 'range');
-      button.classList.toggle('active', active);
-      button.setAttribute('aria-pressed', String(active));
-    });
   });
   document.getElementById('add-expense-btn').addEventListener('click', () => openExpenseEditor(null));
   document.getElementById('expense-form').addEventListener('submit', handleExpenseSubmit);
