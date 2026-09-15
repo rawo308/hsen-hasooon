@@ -778,7 +778,7 @@ async function creditCustomerDebt(client, { customerId, amount, returnSaleId = n
      LEFT JOIN sale_payments p ON p.sale_id = s.id
      WHERE s.customer_id = $1 AND s.type = 'sale' AND s.payment_method = 'debt'
        AND s.total_amount - COALESCE(p.paid, 0) > 0
-     ORDER BY s.created_at
+     ORDER BY s.created_at, s.id
      FOR UPDATE OF s`,
     [customerId]
   );
@@ -1013,7 +1013,14 @@ app.post('/api/customers/:id/payments', requireAuth, requireDatabase, route(asyn
       throw new RequestError(400, `Le paiement dépasse la dette du client (${outstanding}).`);
     }
 
-    const { applied } = await creditCustomerDebt(client, { customerId, amount, idPrefix: 'payment' });
+    const { left, applied } = await creditCustomerDebt(client, { customerId, amount, idPrefix: 'payment' });
+    // customer_totals.balance and the invoices creditCustomerDebt() walks are the
+    // same set, so this cannot normally fire. It is here because the alternative
+    // to failing is answering 201 for money that was never written down: if the
+    // two ever drift apart, the payment rolls back rather than partly vanishing.
+    if (left > 0) {
+      throw new RequestError(409, 'Une partie du paiement n’a pas pu être imputée. Rechargez la page et réessayez.');
+    }
 
     return {
       customer: await readCustomer(client, customerId),

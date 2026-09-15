@@ -17,15 +17,9 @@ const emptyState = {
 
 const state = structuredClone(emptyState);
 let cart = [];
-let selectedCustomerProfile = null;
-let selectedCustomerInvoiceId = null;
-let selectedDebtCustomerId = null;
-let selectedDebtInvoiceId = null;
 let selectedPosCustomerId = null;
 let editingProductId = null;
 let editingCustomerId = null;
-let customerPurchaseRange = '30d';
-let customerPurchaseCustomRange = { start: '', end: '' };
 let customerPurchaseSummaryFilter = { mode: 'all', start: '', end: '' };
 let customerTransactionHistoryFilter = { mode: 'all', start: '', end: '' };
 let saleDiscountPercent = 0;
@@ -247,41 +241,8 @@ function getCustomerById(customerId) {
   return state.customers.find((customer) => customer.id === customerId) || null;
 }
 
-function getCustomerPurchaseStart(range) {
-  const start = new Date();
-  start.setHours(0, 0, 0, 0);
-  start.setDate(start.getDate() - (range === 'today' ? 0 : range === '7d' ? 6 : 29));
-  return start;
-}
-
-function getCustomerPurchaseRangeBounds(range) {
-  if (range === 'custom') {
-    const startValue = customerPurchaseCustomRange.start;
-    const endValue = customerPurchaseCustomRange.end;
-    if (!startValue || !endValue) {
-      return { start: null, end: null };
-    }
-    const start = getStartOfDay(new Date(startValue));
-    const end = new Date(endValue);
-    end.setHours(23, 59, 59, 999);
-    return { start, end };
-  }
-  const start = getCustomerPurchaseStart(range);
-  const end = new Date();
-  return { start, end };
-}
-
-function getCustomerPurchasesForRange(customerId, range) {
-  const { start, end } = getCustomerPurchaseRangeBounds(range);
-  if (!start || !end) return [];
-  return state.sales
-    .filter((sale) => sale.customerId === customerId && isCustomerSale(sale))
-    .filter((sale) => {
-      const date = new Date(sale.createdAt);
-      return date >= start && date <= end;
-    });
-}
-
+// Which shape a pair of date inputs describes: neither set is the whole history,
+// two different days is a range, and anything else is a single day.
 function getDateFilterMode(startValue, endValue) {
   if (!startValue && !endValue) return 'all';
   if (startValue && endValue && startValue !== endValue) return 'range';
@@ -381,23 +342,6 @@ function getInvoiceStatus(sale) {
   const remaining = getInvoiceRemainingAmount(sale);
   if (remaining <= 0) return 'Payée';
   return getInvoicePaidAmount(sale) > 0 ? 'Partiellement payée' : 'Impayée';
-}
-
-// Date the debt on a sale reached zero, based on its last recorded payment (null if still owed or never had a payment logged).
-function getInvoiceSettlementDate(customer, sale) {
-  if (!customer || getInvoiceRemainingAmount(sale) > 0) return null;
-  const payments = (customer.debtHistory || [])
-    .filter((entry) => entry.type === 'payment' && entry.saleId === sale.id)
-    .sort((a, b) => new Date(b.date) - new Date(a.date));
-  return payments.length ? payments[0].date : null;
-}
-
-// Label + settlement date for the customer invoice history: distinguishes cash/credit-paid-at-once invoices from debt settled later.
-function getInvoiceHistoryLabel(customer, sale) {
-  if (sale.paymentMethod !== 'debt') return { label: 'Espèces', settledAt: null };
-  const settledAt = getInvoiceSettlementDate(customer, sale);
-  if (settledAt) return { label: 'Dette réglée', settledAt };
-  return { label: getInvoiceStatus(sale), settledAt: null };
 }
 
 function getCustomerCreditInvoices(customerId, outstandingOnly = false) {
@@ -939,42 +883,6 @@ async function addStockToProduct() {
   cancelAddStock();
 }
 
-function renderCustomersList() {
-  const searchValue = document.getElementById('customer-search')?.value?.toLowerCase() || '';
-  const list = state.customers.filter((customer) => `${customer.name} ${customer.phone}`.toLowerCase().includes(searchValue));
-  const listEl = document.getElementById('customer-list');
-  listEl.innerHTML = list.map((customer) => `
-    <div class="customer-row">
-      <div class="customer-meta">
-        <strong>${customer.name}</strong>
-        <small>${customer.phone}</small>
-        ${customer.address ? `<small class="subtle">${customer.address}</small>` : ''}
-      </div>
-      <div class="customer-balance ${customer.balance > 0 ? 'owed' : ''}">
-        <strong>${formatMoney(customer.balance)}</strong>
-        <small>${customer.balance > 0 ? 'Dette restante' : 'Solde réglé'}</small>
-      </div>
-      <div class="customer-actions">
-        <button class="secondary-btn compact-btn" data-select-customer="${customer.id}">Voir</button>
-        <button class="link-btn muted" data-edit-customer="${customer.id}">Modifier</button>
-      </div>
-    </div>
-  `).join('');
-
-  listEl.querySelectorAll('[data-select-customer]').forEach((button) => {
-    button.addEventListener('click', () => {
-      customerHistoryDateFilter = '';
-      selectedCustomerInvoiceId = null;
-      showCustomerProfile(button.dataset.selectCustomer);
-    });
-  });
-
-  listEl.querySelectorAll('[data-edit-customer]').forEach((button) => {
-    button.addEventListener('click', () => beginEditCustomer(button.dataset.editCustomer));
-  });
-}
-
-// Mirrors focusProductEditor: reset to the "add" state, then reveal the modal.
 function openCustomerEditor() {
   cancelCustomerEdit();
   document.getElementById('customer-editor-modal')?.classList.remove('hidden');
@@ -1013,233 +921,6 @@ function cancelCustomerEdit() {
   document.getElementById('customer-form-title').textContent = 'Ajouter un client';
   document.getElementById('cancel-customer-edit').classList.add('hidden');
   document.getElementById('customer-editor-modal')?.classList.add('hidden');
-}
-
-function showCustomerProfile(customerId) {
-  const customer = getCustomerById(customerId);
-  if (!customer) return;
-  selectedCustomerProfile = customer;
-  const allSalesForCustomer = [...state.sales.filter((sale) => sale.customerId === customer.id)].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-  const rangedPurchases = getCustomerPurchasesForRange(customer.id, customerPurchaseRange);
-  const rangedPurchaseTotal = rangedPurchases.reduce((sum, sale) => sum + Number(sale.totalAmount || 0), 0);
-  const salesForCustomer = customerHistoryDateFilter
-    ? allSalesForCustomer.filter((sale) => matchesDateRangeFilter(sale.createdAt, { mode: 'day', start: customerHistoryDateFilter, end: customerHistoryDateFilter }))
-    : allSalesForCustomer;
-
-  const selectedSale = selectedCustomerInvoiceId
-    ? salesForCustomer.find((sale) => sale.id === selectedCustomerInvoiceId) || null
-    : null;
-
-  const customPurchaseRangeHtml = customerPurchaseRange === 'custom' ? `
-    <div class="customer-period-custom inline-custom-range">
-      <label>Du <input type="date" id="customer-purchase-start" value="${customerPurchaseCustomRange.start || ''}" /></label>
-      <label>Au <input type="date" id="customer-purchase-end" value="${customerPurchaseCustomRange.end || ''}" /></label>
-    </div>
-  ` : '';
-
-  const purchaseHistoryHtml = salesForCustomer.length
-    ? salesForCustomer.map((sale) => {
-      const { label, settledAt } = getInvoiceHistoryLabel(customer, sale);
-      return `
-        <button class="purchase-row ${selectedSale && selectedSale.id === sale.id ? 'active' : ''}" data-open-sale="${sale.id}">
-          <div class="purchase-row-info">
-            <strong>Facture n°${sale.id.slice(-4)}</strong>
-            <small>${new Date(sale.createdAt).toLocaleString('fr-FR')} · ${plural(sale.items.length, 'article')}</small>
-          </div>
-          <div class="purchase-row-amount">
-            <strong>${formatMoney(sale.totalAmount)}</strong>
-            <span class="mini-pill ${sale.paymentMethod === 'debt' ? 'warning' : 'success'}">${label}</span>
-            ${settledAt ? `<small class="purchase-row-settled">Réglée le ${new Date(settledAt).toLocaleDateString('fr-FR')}</small>` : ''}
-          </div>
-          <span class="purchase-arrow">›</span>
-        </button>
-      `;
-    }).join('')
-    : `<p class="empty-state">${customerHistoryDateFilter ? 'Aucun achat à cette date.' : 'Aucun achat pour le moment.'}</p>`;
-
-  const selectedSaleHistory = selectedSale ? getInvoiceHistoryLabel(customer, selectedSale) : null;
-
-  const invoiceHtml = selectedSale
-    ? `
-      <div class="invoice-sheet">
-        <div class="invoice-topbar">
-          <div>
-            <p class="eyebrow muted">Facture</p>
-            <h4>Facture n°${selectedSale.id.slice(-4)}</h4>
-          </div>
-          <button class="link-btn" data-back-to-history>Retour</button>
-        </div>
-
-        <div class="invoice-meta">
-          <div><span>Client</span><strong>${customer.name}</strong></div>
-          <div><span>Téléphone</span><strong>${customer.phone}</strong></div>
-          <div><span>Date</span><strong>${new Date(selectedSale.createdAt).toLocaleString('fr-FR')}</strong></div>
-        </div>
-
-        <table class="invoice-table">
-          <thead>
-            <tr>
-              <th>Produit</th>
-              <th>Qté</th>
-              <th>Prix</th>
-              <th>Total</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${selectedSale.items.map((item) => `
-              <tr>
-                <td>${item.productName}</td>
-                <td>${item.quantity}</td>
-                <td>${formatMoney(item.unitPrice)}</td>
-                <td>${formatMoney(item.subtotal)}</td>
-              </tr>
-            `).join('')}
-          </tbody>
-        </table>
-
-        <div class="invoice-totals">
-          <div><span>Sous-total</span><strong>${formatMoney(Number(selectedSale.totalAmount || 0) + Number(selectedSale.discount || 0))}</strong></div>
-          ${selectedSale.discountPercent > 0 ? `<div><span>Remise (${selectedSale.discountPercent} %)</span><strong>-${formatMoney(selectedSale.discount)}</strong></div>` : ''}
-          <div><span>Montant payé</span><strong>${formatMoney(getInvoicePaidAmount(selectedSale))}</strong></div>
-          <div><span>Reste à payer</span><strong>${formatMoney(getInvoiceRemainingAmount(selectedSale))}</strong></div>
-          ${selectedSale.paymentMethod === 'debt' ? `<div><span>Statut</span><strong>${selectedSaleHistory.label}</strong></div>` : ''}
-          ${selectedSaleHistory.settledAt ? `<div><span>Réglée le</span><strong>${new Date(selectedSaleHistory.settledAt).toLocaleDateString('fr-FR')}</strong></div>` : ''}
-          <div><span>Paiement</span><strong>${selectedSale.paymentMethod === 'debt' ? (selectedSale.paymentType === 'partial' ? 'Paiement partiel' : 'Crédit') : 'Espèces'}</strong></div>
-        </div>
-      </div>
-    `
-    : '<div class="empty-invoice"><p class="empty-state">Sélectionnez un achat pour afficher les détails de la facture.</p></div>';
-
-  const historyHtml = customer.debtHistory.length
-    ? customer.debtHistory.map((entry) => `
-        <div class="timeline-item">
-          <div>
-            <strong>${entry.type === 'sale' ? 'Vente à crédit' : 'Paiement reçu'}</strong>
-            <small>${new Date(entry.date).toLocaleString('fr-FR')}${entry.saleId ? ` · Facture n°${entry.saleId.slice(-4)}` : ''}</small>
-          </div>
-          <strong class="${entry.type === 'sale' ? 'credit' : 'payment'}">${entry.type === 'sale' ? '+' : '-'}${formatMoney(entry.amount)}</strong>
-        </div>
-      `).join('')
-    : '<p class="empty-state">Aucune activité de dette ou de paiement pour le moment.</p>';
-
-  document.getElementById('customer-profile').innerHTML = `
-    <div class="profile-header">
-      <div>
-        <p class="eyebrow muted">Client</p>
-        <h3>${customer.name}</h3>
-        <span class="subtle">${customer.phone}</span>
-        ${customer.address ? `<span class="subtle">${customer.address}</span>` : ''}
-      </div>
-      <div class="balance-box">
-        <span>Total dû</span>
-        <strong>${formatMoney(customer.balance)}</strong>
-      </div>
-      <button type="button" class="secondary-btn compact-btn" data-edit-profile-customer="${customer.id}">Modifier le client</button>
-    </div>
-
-    <div class="profile-grid">
-      <div class="profile-panel">
-        <h4>Vue d’ensemble</h4>
-        <div class="mini-grid">
-          <div>
-            <span>Dette actuelle</span>
-            <strong>${formatMoney(customer.balance)}</strong>
-          </div>
-          <div>
-            <span>Total des achats</span>
-            <strong>${formatMoney(customer.totalPurchased)}</strong>
-          </div>
-        </div>
-      </div>
-
-      <div class="profile-panel">
-        <h4>Achats</h4>
-        <label class="purchase-range-control"><span>Période</span><select id="customer-purchase-range"><option value="today" ${customerPurchaseRange === 'today' ? 'selected' : ''}>Aujourd’hui</option><option value="7d" ${customerPurchaseRange === '7d' ? 'selected' : ''}>7 derniers jours</option><option value="30d" ${customerPurchaseRange === '30d' ? 'selected' : ''}>30 derniers jours</option><option value="custom" ${customerPurchaseRange === 'custom' ? 'selected' : ''}>Personnalisé</option></select></label>
-        ${customPurchaseRangeHtml}
-        <strong class="purchase-range-total">${formatMoney(rangedPurchaseTotal)}</strong>
-        <small>${plural(rangedPurchases.length, 'achat')} sur la période</small>
-      </div>
-
-      <div class="profile-panel">
-        <h4>Paiements</h4>
-        <p>${formatMoney(customer.totalPaid)}</p>
-      </div>
-    </div>
-
-    <div class="profile-sections">
-      <div class="profile-section">
-        <div class="profile-section-heading-row">
-          <h4>Historique des achats</h4>
-          <div class="history-date-filter">
-            <input type="date" id="customer-history-date" value="${customerHistoryDateFilter}" aria-label="Filtrer les achats par date" />
-            ${customerHistoryDateFilter ? '<button type="button" class="link-btn muted" id="clear-customer-history-date">Effacer</button>' : ''}
-          </div>
-        </div>
-        <div class="purchase-list">${purchaseHistoryHtml}</div>
-      </div>
-
-      <div class="profile-section">
-        <h4>Détails de la facture</h4>
-        ${invoiceHtml}
-      </div>
-    </div>
-
-    <div class="profile-section debt-history-section">
-      <h4>Historique des dettes et paiements</h4>
-      ${historyHtml}
-    </div>
-  `;
-
-  document.querySelectorAll('[data-open-sale]').forEach((button) => {
-    button.addEventListener('click', () => {
-      selectedCustomerInvoiceId = button.dataset.openSale;
-      showCustomerProfile(customer.id);
-    });
-  });
-
-  const backButton = document.querySelector('[data-back-to-history]');
-  if (backButton) {
-    backButton.addEventListener('click', () => {
-      selectedCustomerInvoiceId = null;
-      showCustomerProfile(customer.id);
-    });
-  }
-
-  document.querySelector('[data-edit-profile-customer]')?.addEventListener('click', () => {
-    beginEditCustomer(customer.id);
-    document.getElementById('customer-form-title')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  });
-
-  document.getElementById('customer-history-date')?.addEventListener('change', (event) => {
-    customerHistoryDateFilter = event.target.value;
-    selectedCustomerInvoiceId = null;
-    showCustomerProfile(customer.id);
-  });
-
-  document.getElementById('customer-purchase-range')?.addEventListener('change', (event) => {
-    customerPurchaseRange = event.target.value;
-    if (customerPurchaseRange !== 'custom') {
-      customerPurchaseCustomRange = { start: '', end: '' };
-    }
-    showCustomerProfile(customer.id);
-  });
-
-  if (customerPurchaseRange === 'custom') {
-    document.getElementById('customer-purchase-start')?.addEventListener('change', (event) => {
-      customerPurchaseCustomRange.start = event.target.value;
-      showCustomerProfile(customer.id);
-    });
-    document.getElementById('customer-purchase-end')?.addEventListener('change', (event) => {
-      customerPurchaseCustomRange.end = event.target.value;
-      showCustomerProfile(customer.id);
-    });
-  }
-
-  document.getElementById('clear-customer-history-date')?.addEventListener('click', () => {
-    customerHistoryDateFilter = '';
-    selectedCustomerInvoiceId = null;
-    showCustomerProfile(customer.id);
-  });
 }
 
 function setActiveTab(tabId) {
@@ -1343,6 +1024,29 @@ function renderClientProfilePage(container, customer) {
     </div>
   `;
 
+  // Every credit and every payment on this customer's account, newest first. The
+  // per-invoice view answers 'what is still owed on this bill'; this answers
+  // 'what has this customer actually paid me, and when'.
+  const debtLedger = (customer.debtHistory || [])
+    .slice()
+    .sort((a, b) => new Date(b.date) - new Date(a.date));
+  const debtLedgerHtml = debtLedger.length
+    ? debtLedger.map((entry) => {
+      const paid = entry.type === 'payment';
+      // A credit from a return is not money received; saying so keeps it from
+      // reading as a payment the customer made.
+      const label = paid ? (entry.returnSaleId ? 'Avoir sur retour' : 'Paiement reçu') : 'Vente à crédit';
+      return `
+        <div class="timeline-item">
+          <div>
+            <strong>${label}</strong>
+            <small>${new Date(entry.date).toLocaleString('fr-FR')}${entry.saleId ? ` · Facture n°${escapeHtml(entry.saleId.slice(-4))}` : ''}</small>
+          </div>
+          <strong class="${paid ? 'payment' : 'credit'}">${paid ? '−' : '+'}${formatMoney(entry.amount)}</strong>
+        </div>`;
+    }).join('')
+    : '<p class="empty-state">Aucune activité de dette ou de paiement pour le moment.</p>';
+
   const historyPicker = `
     <div class="compact-date-popover hidden" data-history-picker>
       <div class="compact-date-picker-grid">
@@ -1398,6 +1102,13 @@ function renderClientProfilePage(container, customer) {
     ? `<button type="button" class="ledger-row invoice-ledger-row ledger-return-row" data-client-invoice-id="${invoice.id}"><span><strong>Retour n°${invoice.id.slice(-4)}</strong><small>${new Date(invoice.createdAt).toLocaleDateString('fr-FR')}</small></span><span><strong>${formatMoney(invoice.totalAmount)}</strong><small>Total du retour</small></span><span><strong>${invoice.items.reduce((sum, item) => sum + Number(item.quantity || 0), 0)}</strong><small>Article(s)</small></span><span class="ledger-remaining"><strong>&mdash;</strong><small>Reste à payer</small></span><span><b class="ledger-status ledger-status-return">Retour</b></span><span class="ledger-arrow">›</span></button>`
     : `<button type="button" class="ledger-row invoice-ledger-row" data-client-invoice-id="${invoice.id}"><span><strong>Facture n°${invoice.id.slice(-4)}</strong><small>${new Date(invoice.createdAt).toLocaleDateString('fr-FR')}</small></span><span><strong>${formatMoney(invoice.totalAmount)}</strong><small>Total</small></span><span><strong>${formatMoney(getInvoicePaidAmount(invoice))}</strong><small>Payé</small></span><span class="ledger-remaining"><strong>${formatMoney(getInvoiceRemainingAmount(invoice))}</strong><small>Reste à payer</small></span><span><b class="ledger-status ${getInvoiceRemainingAmount(invoice) <= 0 ? 'ledger-status-paid' : ''}">${getInvoiceStatus(invoice)}</b></span><span class="ledger-arrow">›</span></button>`
   ).join('') : '<p class="empty-state">Aucune transaction pour ce client.</p>'}
+      </div>
+      <div class="ledger-section-heading">
+        <h4>Dettes et paiements</h4>
+        <span class="subtle">${plural(debtLedger.length, 'mouvement')}</span>
+      </div>
+      <div class="debt-history-section">
+        ${debtLedgerHtml}
       </div>
     </div>
   `;
@@ -1467,6 +1178,18 @@ function renderClientInvoicePage(container, customer, invoiceId) {
   }
 
   const payments = customer.debtHistory.filter((entry) => entry.type === 'payment' && entry.saleId === invoice.id).sort((a, b) => new Date(b.date) - new Date(a.date));
+
+  // Only a credit invoice can take a payment: a cash sale was settled at the
+  // till, and the server refuses a payment on one anyway.
+  const settlement = invoice.paymentMethod !== 'debt'
+    ? '<p class="ledger-view-only-note">Facture réglée en espèces à la vente. Il n’y a rien à encaisser dessus.</p>'
+    : getInvoiceRemainingAmount(invoice) <= 0
+      ? '<p class="ledger-paid-note">Cette facture est entièrement payée.</p>'
+      : `<div class="ledger-invoice-actions">
+           <button type="button" class="primary-btn" data-invoice-payment>Enregistrer un paiement</button>
+           <small>Ce paiement porte sur cette facture seule. Pour régler plusieurs factures d’un coup, passez par la dette en cours du profil client.</small>
+         </div>`;
+
   container.innerHTML = `
     <div class="ledger-page ledger-invoice-page">
       <div class="ledger-page-header"><button type="button" class="ledger-back-btn" data-client-back>← Profil de ${customer.name}</button></div>
@@ -1474,10 +1197,11 @@ function renderClientInvoicePage(container, customer, invoiceId) {
       <table class="ledger-detail-items"><thead><tr><th>Produit</th><th>Quantité</th><th>Prix unitaire</th><th>Total</th></tr></thead><tbody>${invoice.items.map((item) => `<tr><td>${item.productName}</td><td>${item.quantity}</td><td>${formatMoney(item.unitPrice)}</td><td>${formatMoney(item.subtotal)}</td></tr>`).join('')}</tbody></table>
       <div class="ledger-financial-summary">${invoice.discountPercent > 0 ? `<div><span>Remise (${invoice.discountPercent} %)</span><strong>-${formatMoney(invoice.discount)}</strong></div>` : ''}<div><span>Total de la facture</span><strong>${formatMoney(invoice.totalAmount)}</strong></div><div><span>Total payé</span><strong>${formatMoney(getInvoicePaidAmount(invoice))}</strong></div><div><span>Reste à payer</span><strong>${formatMoney(getInvoiceRemainingAmount(invoice))}</strong></div></div>
       <div class="ledger-payment-history"><h4>Historique des paiements</h4>${payments.length ? payments.map((payment) => `<div><span>${new Date(payment.date).toLocaleString('fr-FR')}</span><strong>${formatMoney(payment.amount)}</strong></div>`).join('') : '<p class="empty-state">Aucun paiement enregistré pour cette facture.</p>'}</div>
-      <p class="ledger-view-only-note">Consultation uniquement. Les paiements se gèrent depuis le profil du client, sur la dette en cours.</p>
+      ${settlement}
     </div>
   `;
   container.querySelector('[data-client-back]')?.addEventListener('click', () => navigateClient(`/clients/${encodeURIComponent(customer.id)}`));
+  container.querySelector('[data-invoice-payment]')?.addEventListener('click', () => openPaymentModal(customer.id, invoice.id));
 }
 
 // The business identity printed on every invoice. It is the legal header from
@@ -1721,6 +1445,28 @@ async function confirmDeleteSale() {
   showMessage('pos-message', returning ? 'Retour supprimé et stock rétabli.' : 'Vente supprimée et écritures rétablies.', 'success');
 }
 
+// Forms with a write in flight. A submit handler is async, so between the click
+// and the server's answer the button is still live: without this a second click
+// sends a second POST and the record is created twice.
+const submittingForms = new WeakSet();
+
+// Runs `write` with the form's submit button disabled, and refuses to start a
+// second run while the first is still going. The WeakSet is the actual guard --
+// the disabled attribute is only what makes it visible to the operator, and a
+// keyboard Enter can beat it. Always releases, so a failed write can be retried.
+async function submitOnce(form, write) {
+  if (!form || submittingForms.has(form)) return null;
+  const button = form.querySelector('[type="submit"]');
+  submittingForms.add(form);
+  if (button) button.disabled = true;
+  try {
+    return await write();
+  } finally {
+    submittingForms.delete(form);
+    if (button) button.disabled = false;
+  }
+}
+
 async function handleProductSubmit(event) {
   event.preventDefault();
   const payload = {
@@ -1736,9 +1482,9 @@ async function handleProductSubmit(event) {
   }
 
   if (!editingProductId && startingStock < 0) return;
-  const saved = editingProductId
-    ? await mutate(`/products/${editingProductId}`, 'PUT', payload)
-    : await mutate('/products', 'POST', { ...payload, stock: startingStock });
+  const saved = await submitOnce(event.target, () => (editingProductId
+    ? mutate(`/products/${editingProductId}`, 'PUT', payload)
+    : mutate('/products', 'POST', { ...payload, stock: startingStock })));
   if (saved === null) return;
   cancelProductEdit();
 }
@@ -1753,9 +1499,9 @@ async function handleCustomerSubmit(event) {
 
   if (!payload.name || !payload.phone) return;
 
-  const saved = editingCustomerId
-    ? await mutate(`/customers/${editingCustomerId}`, 'PUT', payload)
-    : await mutate('/customers', 'POST', payload);
+  const saved = await submitOnce(event.target, () => (editingCustomerId
+    ? mutate(`/customers/${editingCustomerId}`, 'PUT', payload)
+    : mutate('/customers', 'POST', payload)));
   if (saved === null) return;
   cancelCustomerEdit();
 }
@@ -1788,6 +1534,12 @@ async function addCustomerFromPos() {
 }
 
 let payingCustomerId = null;
+// Set when the modal was opened from one invoice's page rather than from the
+// customer's balance. Null means the payment goes against the whole running tab.
+let payingInvoiceId = null;
+// Held from the click until the server answers, so a second click on a save
+// already in flight cannot record the same payment twice.
+let isRecordingPayment = false;
 let pendingSale = null;
 let isCompletingTransaction = false;
 
@@ -1803,17 +1555,24 @@ function updatePosPaymentFields() {
 }
 
 // --- Paiement d’une dette -------------------------------------------------
-// A payment is entered against a customer's whole balance, not one invoice: the
-// shop takes what is handed over and it comes off the running tab. The server
-// splits it across their unpaid invoices oldest first; previewAllocation() below
-// shows the operator that same split before they commit to it.
+// A debt is paid one of two ways, and the one modal below serves both:
+//
+//   from the customer's profile -- money against the whole running tab. The
+//     server splits it across their unpaid invoices oldest first, and
+//     previewAllocation() shows the operator that same split beforehand.
+//   from an invoice's own page  -- money against that invoice alone, for when
+//     the customer is settling one bill rather than their balance.
+//
+// `payingInvoiceId` is what separates them: null for the balance, an invoice id
+// otherwise. Everything below branches on that one flag rather than growing a
+// second modal that could drift out of step with this one.
 
 // The split the server is about to make, computed from the same rule so the
 // preview and the result cannot disagree. Oldest invoice first.
 function previewAllocation(customerId, amount) {
   const invoices = getCustomerCreditInvoices(customerId, true)
     .slice()
-    .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+    .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
 
   const slices = [];
   let left = amount;
@@ -1828,17 +1587,51 @@ function previewAllocation(customerId, amount) {
   return slices;
 }
 
-function openPaymentModal(customerId) {
+// The invoice the modal is scoped to, or null when it is paying the balance.
+function getPayingInvoice() {
+  if (!payingInvoiceId) return null;
+  return state.sales.find((sale) => sale.id === payingInvoiceId && sale.customerId === payingCustomerId) || null;
+}
+
+// What this payment cannot exceed: one invoice's remainder when scoped to it,
+// the customer's whole balance otherwise.
+function getPaymentCeiling() {
+  const invoice = getPayingInvoice();
+  return invoice
+    ? getInvoiceRemainingAmount(invoice)
+    : Number(getCustomerById(payingCustomerId)?.balance || 0);
+}
+
+// `invoiceId` scopes the payment to a single invoice; omit it to pay the balance.
+function openPaymentModal(customerId, invoiceId = null) {
   const customer = getCustomerById(customerId);
-  if (!customer || Number(customer.balance) <= 0) return;
+  if (!customer) return;
+
+  // Resolved before anything is assigned, so a stale id cannot leave the modal
+  // half-opened against a customer it never finished scoping.
+  const invoice = invoiceId
+    ? state.sales.find((sale) => sale.id === invoiceId && sale.customerId === customer.id)
+    : null;
+  if (invoiceId && !invoice) return;
+
+  const ceiling = invoice ? getInvoiceRemainingAmount(invoice) : Number(customer.balance || 0);
+  if (ceiling <= 0) return;
 
   payingCustomerId = customer.id;
+  payingInvoiceId = invoice ? invoice.id : null;
+
+  document.getElementById('payment-scope-kicker').textContent = invoice
+    ? `Facture n°${invoice.id.slice(-4)}`
+    : 'Dette client';
   document.getElementById('payment-modal-customer').textContent = `${customer.name} · ${customer.phone}`;
-  document.getElementById('payment-outstanding').textContent = formatMoney(customer.balance);
+  document.getElementById('payment-outstanding-label').textContent = invoice ? 'Reste à payer' : 'Dette en cours';
+  document.getElementById('payment-outstanding').textContent = formatMoney(ceiling);
+  // A split only means something across several invoices.
+  document.getElementById('payment-allocation').classList.toggle('hidden', Boolean(invoice));
 
   const input = document.getElementById('payment-amount');
   input.value = '';
-  input.max = customer.balance;
+  input.max = ceiling;
   showMessage('payment-message', '', '');
   renderPaymentAllocation();
 
@@ -1847,7 +1640,11 @@ function openPaymentModal(customerId) {
 }
 
 function closePaymentModal() {
+  // Refused mid-save: clearing the scope under a request in flight would leave
+  // the success path with no customer to report against.
+  if (isRecordingPayment) return;
   payingCustomerId = null;
+  payingInvoiceId = null;
   document.getElementById('payment-form').reset();
   showMessage('payment-message', '', '');
   document.getElementById('payment-modal').classList.add('hidden');
@@ -1857,15 +1654,18 @@ function renderPaymentAllocation() {
   const list = document.getElementById('payment-allocation-list');
   if (!list || !payingCustomerId) return;
 
-  const customer = getCustomerById(payingCustomerId);
+  // Scoped to one invoice there is nothing to spread, and the block is hidden.
+  if (payingInvoiceId) return;
+
   const amount = Number(document.getElementById('payment-amount')?.value || 0);
+  const ceiling = getPaymentCeiling();
 
   if (!Number.isFinite(amount) || amount <= 0) {
     list.innerHTML = '<p class="empty-state">Saisissez un montant pour voir les factures qu’il règle.</p>';
     return;
   }
-  if (amount > Number(customer?.balance || 0)) {
-    list.innerHTML = `<p class="empty-state">Le montant dépasse la dette en cours (${formatMoney(customer?.balance)}).</p>`;
+  if (amount > ceiling) {
+    list.innerHTML = `<p class="empty-state">Le montant dépasse la dette en cours (${formatMoney(ceiling)}).</p>`;
     return;
   }
 
@@ -1884,27 +1684,51 @@ function renderPaymentAllocation() {
 
 async function handlePaymentSubmit(event) {
   event.preventDefault();
-  if (!payingCustomerId) return;
+  if (!payingCustomerId || isRecordingPayment) return;
 
   const customer = getCustomerById(payingCustomerId);
+  const invoice = getPayingInvoice();
   const amount = Number(document.getElementById('payment-amount').value);
+  const ceiling = getPaymentCeiling();
 
   if (!customer || !Number.isFinite(amount) || amount <= 0) {
     showMessage('payment-message', 'Saisissez un montant supérieur à 0.', 'error');
     return;
   }
-  if (amount > Number(customer.balance || 0)) {
-    showMessage('payment-message', `Le paiement ne peut pas dépasser la dette en cours (${formatMoney(customer.balance)}).`, 'error');
+  if (amount > ceiling) {
+    showMessage('payment-message', invoice
+      ? `Le paiement ne peut pas dépasser le reste à payer de la facture (${formatMoney(ceiling)}).`
+      : `Le paiement ne peut pas dépasser la dette en cours (${formatMoney(ceiling)}).`, 'error');
     return;
   }
 
-  const settled = previewAllocation(customer.id, amount).filter((slice) => slice.settles).length;
-  const saved = await mutate(`/customers/${customer.id}/payments`, 'POST', { amount });
+  // Read off the pre-save state: mutate() folds the server's answer into `state`,
+  // after which the invoices this amount settled no longer look outstanding.
+  const note = invoice
+    ? (amount >= ceiling ? ' Facture soldée.' : '')
+    : (() => {
+      const settled = previewAllocation(customer.id, amount).filter((slice) => slice.settles).length;
+      return settled ? ` ${plural(settled, 'facture')} soldée${settled > 1 ? 's' : ''}.` : '';
+    })();
+  const target = invoice ? `/sales/${invoice.id}/payments` : `/customers/${customer.id}/payments`;
+  const where = invoice ? `sur la facture n°${invoice.id.slice(-4)}` : `pour ${customer.name}`;
+
+  // Flag and button are both set before the first await, so a double-click
+  // cannot fire the same payment twice; `finally` releases them on failure too.
+  const button = document.getElementById('confirm-payment-btn');
+  isRecordingPayment = true;
+  button.disabled = true;
+  let saved = null;
+  try {
+    saved = await mutate(target, 'POST', { amount });
+  } finally {
+    isRecordingPayment = false;
+    button.disabled = false;
+  }
   if (saved === null) return;
 
   closePaymentModal();
-  const note = settled ? ` ${plural(settled, 'facture')} soldée${settled > 1 ? 's' : ''}.` : '';
-  setSaveStatus('saved', `Paiement de ${formatMoney(amount)} enregistré pour ${customer.name}.${note}`);
+  setSaveStatus('saved', `Paiement de ${formatMoney(amount)} enregistré ${where}.${note}`);
 }
 
 const EMPTY_CART_ERRORS = {
@@ -2336,18 +2160,21 @@ const REPORT_TYPES = {
   return:     { label: 'Retour',     stock: 'in',  chip: 'return' },
   waste:      { label: 'Perte',      stock: 'out', chip: 'waste' },
   adjustment: { label: 'Ajustement +', stock: 'in',  chip: 'adjustment' },
-  adjustment_out: { label: 'Ajustement −', stock: 'out', chip: 'adjustment' }
+  adjustment_out: { label: 'Ajustement −', stock: 'out', chip: 'adjustment' },
+  // A debt settled after the fact: money in, no goods moving either way.
+  payment:    { label: 'Paiement',   stock: null,  chip: 'payment' }
 };
 
 // Which transaction types each filter chip lets through. 'money' is the cash view:
 // only the types that move money in or out of the till.
 const REPORT_CATEGORIES = {
-  all:        ['sale', 'purchase', 'return', 'waste', 'adjustment', 'adjustment_out'],
-  money:      ['sale', 'purchase', 'return'],
+  all:        ['sale', 'purchase', 'return', 'waste', 'adjustment', 'adjustment_out', 'payment'],
+  money:      ['sale', 'purchase', 'return', 'payment'],
   sale:       ['sale'],
   purchase:   ['purchase'],
   return:     ['return'],
   waste:      ['waste'],
+  payment:    ['payment'],
   adjustment: ['adjustment', 'adjustment_out']
 };
 
@@ -2417,18 +2244,41 @@ function getReportRows() {
     });
   }
 
+  // A credit written off by a return is a payment row in the ledger, but no money
+  // changed hands -- the same reason Encaissé skips it -- so it is not a movement.
+  if (allowed.has('payment')) {
+    for (const payment of getReportPayments(filter)) {
+      if (payment.returnSaleId) continue;
+      rows.push({
+        id: payment.id,
+        type: 'payment',
+        at: payment.date,
+        party: payment.customer.name,
+        detail: payment.saleId ? `Facture n°${payment.saleId.slice(-4)}` : '',
+        units: 0,
+        amount: payment.amount,
+        saleId: payment.saleId
+      });
+    }
+  }
+
   return rows.sort((a, b) => new Date(b.at) - new Date(a.at));
 }
 
 // Debt payments are their own money event: they are cash arriving later for a
 // sale that was booked earlier, so they are counted on the day they were paid.
+//
+// Narrowing the report to one customer narrows these too. It did not before, so
+// a single-customer report credited them with every other customer's payments.
 function getReportPayments(filter) {
   const payments = [];
   for (const customer of state.customers) {
+    if (reportFilters.customerId && customer.id !== reportFilters.customerId) continue;
     for (const entry of customer.debtHistory || []) {
       if (entry.type !== 'payment') continue;
       if (!matchesDateRangeFilter(entry.date, filter)) continue;
       payments.push({
+        id: entry.id,
         customer,
         amount: Number(entry.amount || 0),
         date: entry.date,
@@ -2544,6 +2394,7 @@ function reportTiles(summary) {
 
 // The payment pill the retired Historique page showed. Only a sale has a tender.
 function reportSettlement(row) {
+  if (row.type === 'payment') return '<span class="mini-pill success">Sur dette</span>';
   if (row.type !== 'sale') return '<span class="subtle">—</span>';
   const credit = row.sale?.paymentMethod === 'debt';
   const label = credit ? (row.sale?.paymentType === 'partial' ? getInvoiceStatus(row.sale) : 'Crédit') : 'Espèces';
@@ -2559,6 +2410,11 @@ function reportRowActions(row) {
   }
   if (row.type === 'purchase' || row.type === 'waste') {
     return `<button class="link-btn danger-link" data-report-delete="${row.id}">Supprimer</button>`;
+  }
+  // A payment has no record of its own to open, but the invoice it paid does.
+  // It is not deletable: reversing one is a refund, not an undo.
+  if (row.type === 'payment' && row.saleId) {
+    return `<button class="link-btn" data-report-view="${row.saleId}">Voir la facture</button>`;
   }
   return '';
 }
@@ -2800,9 +2656,13 @@ function setupReportListeners() {
 }
 
 // --- Dépenses ---------------------------------------------------------------
-// Expenses are a self-contained ledger. Nothing here reads sales, customers,
-// debts or stock, and nothing outside here reads state.expenses, so the two
-// sides can never affect each other's totals.
+// Expenses are their own tab and their own ledger: nothing here reads sales,
+// customers, debts or stock, so a change on either side cannot move the other's
+// stock or balances.
+//
+// The one place they meet is money. An expense is cash out of the till, so the
+// report's Décaissé and net read state.expenses through getExpensesForFilter()
+// -- the same selector this page lists from, so the two always agree.
 
 // 'Produits gaspillés' used to live here. Waste is a stock movement now -- the
 // Perte mode of the register -- so it is no longer a money-only expense line.
@@ -2816,6 +2676,10 @@ const EXPENSE_TYPES = [
 let editingExpenseId = null;
 let viewingExpenseId = null;
 let pendingDeleteExpenseId = null;
+
+// Defaults to 'all' rather than today: an expense is usually entered days after
+// it happened, so the useful first view is everything, not this morning.
+let expenseFilters = { mode: 'all', day: '', start: '', end: '', type: 'all' };
 
 // Dates are stored as the YYYY-MM-DD the date input produces, so comparisons are
 // plain string comparisons and no timezone can shift a day.
@@ -2834,8 +2698,6 @@ function getExpenseById(expenseId) {
   return state.expenses.find((expense) => expense.id === expenseId) || null;
 }
 
-// The single source of truth for both the list and the total, so the summary can
-// never disagree with the rows on screen.
 // One modal for both create and edit: passing an id prefills it and makes the
 // submit update that record instead of appending a new one.
 function openExpenseEditor(expenseId) {
@@ -2882,9 +2744,9 @@ async function handleExpenseSubmit(event) {
     return;
   }
 
-  const saved = editingExpenseId
-    ? await mutate(`/expenses/${editingExpenseId}`, 'PUT', { type, amount, date, note })
-    : await mutate('/expenses', 'POST', { type, amount, date, note });
+  const saved = await submitOnce(event.target, () => (editingExpenseId
+    ? mutate(`/expenses/${editingExpenseId}`, 'PUT', { type, amount, date, note })
+    : mutate('/expenses', 'POST', { type, amount, date, note })));
   if (saved === null) return;
   closeExpenseEditor();
 }
@@ -2933,8 +2795,157 @@ async function confirmExpenseDelete() {
   closeExpenseDetails();
 }
 
+// The date filter this page is currently describing, in the shape the shared
+// matchesDateRangeFilter() helper expects.
+function getExpenseFilter() {
+  if (expenseFilters.mode === 'all') return { mode: 'all', start: '', end: '' };
+  if (expenseFilters.mode === 'day') {
+    const day = expenseFilters.day || toDateInputValue(new Date());
+    return { mode: 'day', start: day, end: day };
+  }
+  return getDateFilterMode(expenseFilters.start, expenseFilters.end) === 'all'
+    ? { mode: 'all', start: '', end: '' }
+    : { mode: getDateFilterMode(expenseFilters.start, expenseFilters.end), start: expenseFilters.start, end: expenseFilters.end };
+}
+
+// Rendered from EXPENSE_TYPES rather than written into the markup, so the filter
+// and the editor's dropdown can never offer a different set of types.
+function renderExpenseTypeChips() {
+  const container = document.getElementById('expense-type-chips');
+  if (!container) return;
+  const chips = ['all', ...EXPENSE_TYPES];
+  container.innerHTML = chips.map((type) => `
+    <button type="button" class="report-chip${expenseFilters.type === type ? ' active' : ''}"
+            data-expense-type="${escapeHtml(type)}" aria-pressed="${expenseFilters.type === type}">${type === 'all' ? 'Tout' : escapeHtml(type)}</button>
+  `).join('');
+  container.querySelectorAll('[data-expense-type]').forEach((button) => {
+    button.addEventListener('click', () => setExpenseType(button.dataset.expenseType));
+  });
+}
+
+function setExpenseMode(mode) {
+  const next = ['day', 'range', 'all'].includes(mode) ? mode : 'all';
+  if (next === expenseFilters.mode) return;
+  expenseFilters.mode = next;
+
+  document.querySelectorAll('[data-expense-mode]').forEach((button) => {
+    const active = button.dataset.expenseMode === next;
+    button.classList.toggle('active', active);
+    button.setAttribute('aria-pressed', String(active));
+  });
+  document.getElementById('expense-day-field')?.classList.toggle('hidden', next !== 'day');
+  document.getElementById('expense-start-field')?.classList.toggle('hidden', next !== 'range');
+  document.getElementById('expense-end-field')?.classList.toggle('hidden', next !== 'range');
+  renderExpenses();
+}
+
+function setExpenseType(type) {
+  expenseFilters.type = type === 'all' || EXPENSE_TYPES.includes(type) ? type : 'all';
+  renderExpenseTypeChips();
+  renderExpenses();
+}
+
+// Every type that has spending in the period, biggest first.
+function expenseBreakdown(expenses) {
+  const totals = new Map();
+  for (const expense of expenses) {
+    const type = expense.type || 'Autre';
+    totals.set(type, (totals.get(type) || 0) + Number(expense.amount || 0));
+  }
+  return [...totals.entries()].sort((a, b) => b[1] - a[1]);
+}
+
+function renderExpenses() {
+  const container = document.getElementById('expense-view');
+  if (!container) return;
+
+  const filter = getExpenseFilter();
+  const expenses = getExpensesForFilter(filter, expenseFilters.type);
+  const total = expenses.reduce((sum, expense) => sum + Number(expense.amount || 0), 0);
+  const breakdown = expenseBreakdown(expenses);
+
+  const table = expenses.length
+    ? `
+      <div class="card">
+        <div class="table-wrap report-table-wrap">
+          <table class="report-table">
+            <thead>
+              <tr>
+                <th>Date</th><th>Type</th><th>Note</th>
+                <th class="report-num">Montant</th>
+                <th class="row-actions-head" aria-label="Actions"></th>
+              </tr>
+            </thead>
+            <tbody>
+              ${expenses.map((expense) => `
+                <tr class="report-row report-row-expense">
+                  <td>${formatExpenseDate(expense.date)}</td>
+                  <td><span class="mini-pill report-pill-expense">${escapeHtml(expense.type || 'Autre')}</span></td>
+                  <td>${expense.note ? escapeHtml(expense.note) : '<span class="subtle">—</span>'}</td>
+                  <td class="report-num">${formatMoney(expense.amount)}</td>
+                  <td class="row-actions">
+                    <button class="link-btn" data-expense-view="${expense.id}">Voir</button>
+                    <button class="link-btn" data-expense-edit="${expense.id}">Modifier</button>
+                    <button class="link-btn danger-link" data-expense-delete="${expense.id}">Supprimer</button>
+                  </td>
+                </tr>`).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>`
+    : `
+      <div class="card">
+        <div class="empty-state-block">
+          <strong>Aucune dépense sur cette période</strong>
+          <p>Changez la période ou le type, ou enregistrez une nouvelle dépense.</p>
+        </div>
+      </div>`;
+
+  container.innerHTML = `
+    <p class="report-period">${escapeHtml(getDateFilterSummary(filter))} · ${plural(expenses.length, 'dépense')}</p>
+
+    <div class="report-tiles">
+      <div class="report-tile">
+        <span class="report-tile-label">Total dépensé</span>
+        <strong class="report-tile-value">${formatMoney(total)}</strong>
+        <small>${expenseFilters.type === 'all' ? 'Tous types confondus' : escapeHtml(expenseFilters.type)}</small>
+      </div>
+      ${breakdown.slice(0, 4).map(([type, amount]) => `
+        <div class="report-tile report-tile-compact">
+          <span class="report-tile-label">${escapeHtml(type)}</span>
+          <strong class="report-tile-value">${formatMoney(amount)}</strong>
+          <small>${total > 0 ? Math.round(amount / total * 100) : 0} % du total</small>
+        </div>`).join('')}
+    </div>
+
+    ${table}`;
+
+  const bind = (attribute, handler) => container.querySelectorAll(`[${attribute}]`).forEach((button) => {
+    button.addEventListener('click', () => handler(button.getAttribute(attribute)));
+  });
+  bind('data-expense-view', openExpenseDetails);
+  bind('data-expense-edit', openExpenseEditor);
+  bind('data-expense-delete', openExpenseDeleteConfirmation);
+}
+
 function setupExpenseListeners() {
   document.getElementById('add-expense-btn').addEventListener('click', () => openExpenseEditor(null));
+  document.querySelectorAll('[data-expense-mode]').forEach((button) => {
+    button.addEventListener('click', () => setExpenseMode(button.dataset.expenseMode));
+  });
+  document.getElementById('expense-filter-day')?.addEventListener('change', (event) => {
+    expenseFilters.day = event.target.value;
+    renderExpenses();
+  });
+  document.getElementById('expense-filter-start')?.addEventListener('change', (event) => {
+    expenseFilters.start = event.target.value;
+    renderExpenses();
+  });
+  document.getElementById('expense-filter-end')?.addEventListener('change', (event) => {
+    expenseFilters.end = event.target.value;
+    renderExpenses();
+  });
+  renderExpenseTypeChips();
   document.getElementById('expense-form').addEventListener('submit', handleExpenseSubmit);
   document.getElementById('cancel-expense-edit').addEventListener('click', closeExpenseEditor);
   document.getElementById('close-expense-editor').addEventListener('click', closeExpenseEditor);
@@ -2964,10 +2975,8 @@ function renderAll() {
   renderProductsList();
   renderClientRoute();
   renderPurchases();
+  renderExpenses();
   renderReports();
-  if (selectedCustomerProfile) {
-    showCustomerProfile(selectedCustomerProfile.id);
-  }
 }
 
 function setupEventListeners() {

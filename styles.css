@@ -3319,6 +3319,23 @@ textarea {
   font-weight: 700;
 }
 
+/* The pay-this-invoice action at the foot of an unpaid invoice. */
+.ledger-invoice-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: 22px;
+  padding-top: 18px;
+  border-top: 1px solid var(--line);
+}
+
+.ledger-invoice-actions small {
+  color: var(--muted);
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+
 .ledger-view-only-note {
   margin-top: 22px;
   padding-top: 14px;
@@ -4366,6 +4383,7 @@ body.is-loading .main-panel {
 .report-pill-return { background: #fdf0e1; color: #92400e; }
 .report-pill-waste { background: #fae8e8; color: #a3231b; }
 .report-pill-expense { background: #f1ecf9; color: #573b8c; }
+.report-pill-payment { background: #e4f3f6; color: #16606e; }
 .report-pill-adjustment { background: #eceff1; color: #4a5b63; }
 
 /* The printable sheet: built on demand, off-screen until the print job runs. */

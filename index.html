@@ -376,6 +376,7 @@
                 <button type="button" class="report-chip" data-report-category="sale" aria-pressed="false">Ventes</button>
                 <button type="button" class="report-chip" data-report-category="purchase" aria-pressed="false">Achats</button>
                 <button type="button" class="report-chip" data-report-category="return" aria-pressed="false">Retours</button>
+                <button type="button" class="report-chip" data-report-category="payment" aria-pressed="false">Paiements</button>
                 <button type="button" class="report-chip" data-report-category="waste" aria-pressed="false">Pertes</button>
                 <button type="button" class="report-chip" data-report-category="adjustment" aria-pressed="false">Ajustements</button>
               </div>
@@ -477,7 +478,7 @@
       <div class="modal-content payment-panel">
         <header class="modal-head">
           <div>
-            <p class="section-kicker">Dette client</p>
+            <p class="section-kicker" id="payment-scope-kicker">Dette client</p>
             <h3 id="payment-modal-title">Enregistrer un paiement</h3>
             <span class="subtle" id="payment-modal-customer"></span>
           </div>
@@ -486,7 +487,7 @@
 
         <form id="payment-form" class="stack-form">
           <div class="payment-balance-line">
-            <span>Dette en cours</span>
+            <span id="payment-outstanding-label">Dette en cours</span>
             <strong id="payment-outstanding">0</strong>
           </div>
 
@@ -496,7 +497,7 @@
           </label>
           <button type="button" id="payment-pay-all" class="link-btn">Régler la totalité</button>
 
-          <div class="payment-allocation">
+          <div class="payment-allocation" id="payment-allocation">
             <h4>Imputation</h4>
             <p class="subtle payment-allocation-hint">Le montant règle les factures impayées de la plus ancienne à la plus récente.</p>
             <div id="payment-allocation-list"></div>
