@@ -1392,9 +1392,8 @@ function renderCustomersList() {
 
   listEl.querySelectorAll('[data-select-customer]').forEach((button) => {
     button.addEventListener('click', () => {
-      customerHistoryDateFilter = '';
       selectedCustomerInvoiceId = null;
-      showCustomerProfile(button.dataset.selectCustomer);
+      navigateClient(`/clients/${encodeURIComponent(button.dataset.selectCustomer)}`);
     });
   });
 
@@ -3460,9 +3459,6 @@ function renderAll() {
   renderClientRoute();
   renderPurchases();
   renderReports();
-  if (selectedCustomerProfile) {
-    showCustomerProfile(selectedCustomerProfile.id);
-  }
 }
 
 function setupEventListeners() {
