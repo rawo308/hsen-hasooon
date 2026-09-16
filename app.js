@@ -1607,8 +1607,7 @@ function renderDashboard() {
     </article>
     <article class="dashboard-stat-card dashboard-sales-card">
       <span>Ventes aujourd’hui</span>
-      <div class="dashboard-sales-value-row"><div id="dashboard-sales-date-filter" class="shared-date-filter"></div><strong>${formatMoney(salesTotal)}</strong></div>
-      <small>total des factures</small>
+      </div><strong>${formatMoney(salesTotal)}</strong></div>
     </article>
     <article class="dashboard-stat-card">
       <span>Total dû</span>
