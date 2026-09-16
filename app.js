@@ -24,6 +24,7 @@ let selectedPosCustomerId = null;
 let editingProductId = null;
 let editingCustomerId = null;
 let customerDateFilter = { mode: 'all', start: '', end: '' };
+let dashboardSalesDateFilter = getTodayFilter();
 let saleDiscountPercent = 0;
 let pertesFilters = { mode: 'all', start: '', end: '' };
 let editingPerteId = null;
@@ -1395,50 +1396,73 @@ function renderDashboard() {
   const todayTransactions = getDashboardTransactions();
   const todaySales = todayTransactions.filter(isCustomerSale);
   const todayReturns = todayTransactions.filter(isReturn);
+  const filteredSales = state.sales
+    .filter(isCustomerSale)
+    .filter((sale) => matchesDateRangeFilter(sale.createdAt, dashboardSalesDateFilter));
   const todayWastes = state.sales
     .filter((sale) => getTransactionType(sale) === 'waste')
     .filter((sale) => matchesDateRangeFilter(sale.createdAt, getTodayFilter()));
-  const salesTotal = todaySales.reduce((total, sale) => total + Number(sale.totalAmount || 0), 0);
+  const salesTotal = filteredSales.reduce((total, sale) => total + Number(sale.totalAmount || 0), 0);
   const wasteQuantity = todayWastes.reduce((total, sale) => total + (sale.items || [])
     .reduce((itemsTotal, item) => itemsTotal + Number(item.quantity || 0), 0), 0);
   const debtTotal = state.customers.reduce((total, customer) => total + Math.max(0, Number(customer.balance || 0)), 0);
-  const lowStockCount = state.products.filter((product) => Number(product.stock || 0) <= getLowStockThreshold(product)).length;
+  const lowStockProducts = state.products.filter((product) => Number(product.stock || 0) <= getLowStockThreshold(product));
 
-  const cards = [
-    ['Factures aujourd’hui', todaySales.length, 'facture(s)'],
-    ['Ventes aujourd’hui', formatMoney(salesTotal), 'total des factures'],
-    ['Total dû', formatMoney(debtTotal), 'dettes en cours'],
-    ['Stock faible', lowStockCount, 'produit(s) à réapprovisionner'],
-    ['Pertes aujourd’hui', wasteQuantity, 'article(s) perdu(s)'],
-    ['Retours aujourd’hui', todayReturns.length, 'transaction(s)']
-  ];
-  summary.innerHTML = cards.map(([label, value, hint]) => `
+  summary.innerHTML = `
     <article class="dashboard-stat-card">
-      <span>${label}</span>
-      <strong>${value}</strong>
-      <small>${hint}</small>
-    </article>`).join('');
+      <span>Factures aujourd’hui</span>
+      <strong>${todaySales.length}</strong>
+      <small>facture(s)</small>
+    </article>
+    <article class="dashboard-stat-card dashboard-sales-card">
+      <span>Ventes aujourd’hui</span>
+      <div class="dashboard-sales-value-row"><div id="dashboard-sales-date-filter" class="shared-date-filter"></div><strong>${formatMoney(salesTotal)}</strong></div>
+      <small>total des factures</small>
+    </article>
+    <article class="dashboard-stat-card">
+      <span>Total dû</span>
+      <strong>${formatMoney(debtTotal)}</strong>
+      <small>dettes en cours</small>
+    </article>
+    <article class="dashboard-stat-card dashboard-low-stock-card">
+      <span>Stock faible</span>
+      <strong>${lowStockProducts.length}</strong>
+      <small>produit(s) à réapprovisionner</small>
+      <div class="dashboard-low-stock-list">${lowStockProducts.length
+    ? lowStockProducts.map((product) => `<span>${escapeHtml(product.name)} · ${Number(product.stock || 0)}</span>`).join('')
+    : '<span>Aucun produit concerné</span>'}</div>
+    </article>
+    <article class="dashboard-stat-card">
+      <span>Pertes aujourd’hui</span>
+      <strong>${wasteQuantity}</strong>
+      <small>article(s) perdu(s)</small>
+    </article>
+    <article class="dashboard-stat-card">
+      <span>Retours aujourd’hui</span>
+      <strong>${todayReturns.length}</strong>
+      <small>transaction(s)</small>
+    </article>`;
+
+  setupSharedDateFilter(document.getElementById('dashboard-sales-date-filter'), 'dashboard-sales', dashboardSalesDateFilter, (filter) => {
+    dashboardSalesDateFilter = filter;
+    renderDashboard();
+  });
 
   const recent = [...state.sales]
     .filter((sale) => isCustomerSale(sale) || isReturn(sale))
     .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
-    .slice(0, 8);
+    .slice(0, 10);
   history.innerHTML = recent.length ? recent.map((sale) => {
     const returning = isReturn(sale);
     const customer = sale.customerId ? getCustomerById(sale.customerId) : null;
     return `
-      <button type="button" class="dashboard-transaction-row" data-dashboard-sale="${sale.id}">
-        <span><strong>${returning ? `Retour n°${sale.id.slice(-4)}` : `Facture n°${sale.id.slice(-4)}`}</strong><small>${new Date(sale.createdAt).toLocaleDateString('fr-FR')}</small></span>
-        <span><b class="dashboard-transaction-type${returning ? ' is-return' : ''}">${returning ? 'Retour' : 'Vente'}</b><small>${customer ? escapeHtml(customer.name) : 'Client de passage'}</small></span>
+      <div class="dashboard-transaction-row">
+        <span><strong>${new Date(sale.createdAt).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}</strong><small>${returning ? 'Retour' : 'Vente'}</small></span>
+        <span><strong>${customer ? escapeHtml(customer.name) : 'Client de passage'}</strong></span>
         <strong>${formatMoney(sale.totalAmount)}</strong>
         <span class="dashboard-transaction-status">${returning ? 'Retour' : getInvoiceStatus(sale)}</span>
-        <span class="dashboard-transaction-action">Voir</span>
-      </button>`;
+      </div>`;
   }).join('') : '<p class="dashboard-empty">Aucune vente ou retour enregistré.</p>';
-
-  history.querySelectorAll('[data-dashboard-sale]').forEach((button) => {
-    button.addEventListener('click', () => openReceipt(button.dataset.dashboardSale));
-  });
 }
 
 function setActiveTab(tabId) {
@@ -1523,7 +1547,6 @@ function renderClientRows(listEl, searchValue) {
 }
 
 function renderClientProfilePage(container, customer) {
-  const owed = Number(customer.balance || 0);
   const purchaseSummaryTotal = getCustomerPurchaseTotalForFilter(customer.id, customerDateFilter);
   const transactionHistoryRows = getCustomerTransactionHistoryForFilter(customer.id, customerDateFilter);
 
@@ -1542,10 +1565,6 @@ function renderClientProfilePage(container, customer) {
           <div class="customer-summary-card">
             <div class="customer-summary-header"><span>Total acheté</span></div>
             <div class="customer-summary-value-row"><div data-purchase-summary-filter class="shared-date-filter"></div><strong class="customer-summary-total">${formatMoney(purchaseSummaryTotal)}</strong></div>
-          </div>
-          <div class="customer-summary-card${owed > 0 ? ' customer-summary-card-owed' : ''}">
-            <div class="customer-summary-header"><span>Dette en cours</span></div>
-            <strong class="customer-summary-total">${formatMoney(owed)}</strong>
           </div>
         </div>
       </div>
@@ -2049,6 +2068,10 @@ async function handlePaymentSubmit(event) {
   if (saved === null) return;
 
   closePaymentModal();
+  if (Number(saved.customer?.balance || 0) <= 0) {
+    clientListScope = 'debtors';
+    navigateClient('/clients');
+  }
   setSaveStatus('saved', `Paiement de ${formatMoney(amount)} enregistré pour la facture n°${invoice.id.slice(-4)}.`);
 }
 
@@ -2631,10 +2654,6 @@ function getReportRows() {
     const type = getTransactionType(sale);
     if (!REPORT_TYPES[type] || !allowed.has(type)) continue;
     if (!matchesDateRangeFilter(sale.createdAt, filter)) continue;
-    // Narrowing to one customer is a question about trade with them, so the
-    // movements that have no customer drop out rather than showing as noise.
-    if (reportFilters.customerId && sale.customerId !== reportFilters.customerId) continue;
-
     const customer = sale.customerId ? getCustomerById(sale.customerId) : null;
     rows.push({
       id: sale.id,
@@ -2858,40 +2877,6 @@ function renderReports() {
   bind('data-report-delete', openDeleteSaleConfirmation);
 }
 
-// The customer typeahead the retired Historique page carried. Picking a customer
-// narrows the report to their trade; clearing the box widens it again.
-function renderReportCustomerSuggestions() {
-  const input = document.getElementById('report-customer');
-  const list = document.getElementById('report-customer-suggestions');
-  if (!input || !list) return;
-
-  const query = input.value.toLowerCase().trim();
-  if (!query) {
-    list.classList.add('hidden');
-    list.innerHTML = '';
-    return;
-  }
-
-  const matches = state.customers
-    .filter((customer) => `${customer.name} ${customer.phone}`.toLowerCase().includes(query))
-    .slice(0, 6);
-
-  list.innerHTML = matches.length
-    ? matches.map((customer) => `<button type="button" data-report-customer="${customer.id}"><strong>${escapeHtml(customer.name)}</strong><small>${escapeHtml(customer.phone)}</small></button>`).join('')
-    : '<p class="suggestion-empty">Aucun client trouvé.</p>';
-  list.classList.remove('hidden');
-
-  list.querySelectorAll('[data-report-customer]').forEach((button) => {
-    button.addEventListener('click', () => {
-      const customer = getCustomerById(button.dataset.reportCustomer);
-      reportFilters.customerId = customer.id;
-      input.value = `${customer.name} (${customer.phone})`;
-      list.classList.add('hidden');
-      renderReports();
-    });
-  });
-}
-
 function setReportCategory(category) {
   reportFilters.category = REPORT_CATEGORIES[category] ? category : 'all';
   document.querySelectorAll('[data-report-category]').forEach((button) => {
@@ -2992,16 +2977,6 @@ function setupReportListeners() {
   });
   document.getElementById('export-report-btn')?.addEventListener('click', exportReportPdf);
 
-  const customer = document.getElementById('report-customer');
-  customer?.addEventListener('input', () => {
-    // Typing over a chosen customer clears the selection, so the box never shows
-    // one name while the table is filtered by another.
-    if (reportFilters.customerId) {
-      reportFilters.customerId = '';
-      renderReports();
-    }
-    renderReportCustomerSuggestions();
-  });
 }
 
 // --- Dépenses ---------------------------------------------------------------
@@ -3315,13 +3290,6 @@ function setupEventListeners() {
   document.getElementById('close-customer-editor').addEventListener('click', cancelCustomerEdit);
   document.getElementById('customer-editor-modal').addEventListener('click', (event) => {
     if (event.target.id === 'customer-editor-modal') cancelCustomerEdit();
-  });
-  // Closes the report's customer typeahead when the click lands elsewhere.
-  document.addEventListener('click', (event) => {
-    const list = document.getElementById('report-customer-suggestions');
-    const input = document.getElementById('report-customer');
-    if (!list || list.classList.contains('hidden')) return;
-    if (!list.contains(event.target) && event.target !== input) list.classList.add('hidden');
   });
   setupPurchaseListeners();
   setupReportListeners();

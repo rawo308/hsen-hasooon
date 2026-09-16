@@ -189,6 +189,29 @@ p {
   font-variant-numeric: tabular-nums;
 }
 
+.dashboard-sales-value-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.dashboard-sales-value-row .shared-date-filter {
+  flex: 0 0 auto;
+}
+
+.dashboard-sales-value-row>strong {
+  white-space: nowrap;
+}
+
+.dashboard-low-stock-list {
+  display: grid;
+  gap: 3px;
+  max-height: 68px;
+  overflow-y: auto;
+  color: var(--muted);
+  font-size: 0.76rem;
+}
+
 .dashboard-stat-card small,
 .dashboard-transaction-row small {
   color: var(--muted);
@@ -220,14 +243,15 @@ p {
 }
 
 .dashboard-history-list {
-  max-height: min(48vh, 430px);
+  height: min(48vh, 430px);
   overflow-y: auto;
+  scrollbar-gutter: stable;
   border-top: 1px solid var(--line);
 }
 
 .dashboard-transaction-row {
   display: grid;
-  grid-template-columns: minmax(145px, 1.1fr) minmax(130px, 1fr) minmax(110px, auto) minmax(110px, auto) auto;
+  grid-template-columns: minmax(90px, 0.7fr) minmax(150px, 1.3fr) minmax(110px, auto) minmax(110px, auto);
   align-items: center;
   width: 100%;
   gap: 12px;
@@ -237,12 +261,6 @@ p {
   background: transparent;
   color: var(--text);
   text-align: left;
-}
-
-.dashboard-transaction-row:hover,
-.dashboard-transaction-row:focus-visible {
-  background: var(--panel-soft);
-  outline: none;
 }
 
 .dashboard-transaction-row>span {
@@ -3198,17 +3216,26 @@ textarea {
   display: flex;
   align-items: center;
   gap: 10px;
-  margin: 0 0 14px;
+  margin: 0 0 10px;
   padding: 10px 12px;
 }
 
 .pertes-product-filter {
-  display: grid;
-  gap: 5px;
-  min-width: min(280px, 100%);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: min(330px, 100%);
   color: var(--muted);
   font-size: 0.72rem;
   font-weight: 700;
+}
+
+.pertes-product-filter>label {
+  flex: 0 0 auto;
+}
+
+.pertes-product-filter .pertes-product-picker {
+  flex: 1 1 240px;
 }
 
 .pertes-product-picker {
@@ -5508,14 +5535,13 @@ tr:focus-within>.row-actions .link-btn {
   max-height: min(42vh, 420px);
 }
 
-/* Final compact profile rhythm. Keep both customer metrics in equal columns
-   and keep the purchase amount directly under its date control. */
+/* Final compact profile rhythm for the purchase summary and its date controls. */
 .ledger-entity-stats {
   display: grid;
-  grid-template-columns: repeat(2, minmax(180px, 1fr));
+  grid-template-columns: minmax(0, auto);
   align-items: start;
-  gap: 28px;
-  min-width: 390px;
+  gap: 0;
+  min-width: 0;
 }
 
 .customer-summary-card {
@@ -5529,12 +5555,28 @@ tr:focus-within>.row-actions .link-btn {
 }
 
 .customer-summary-value-row {
-  display: grid;
-  justify-items: start;
-  gap: 8px;
+  display: flex !important;
+  align-items: center;
+  justify-content: flex-start;
+  flex-direction: row !important;
+  flex-wrap: nowrap;
+  gap: 10px;
+}
+
+.customer-summary-value-row .shared-date-filter,
+.customer-summary-value-row .shared-date-control {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: row;
+  align-items: center;
 }
 
 .customer-summary-value-row .customer-summary-total {
+  margin: 0;
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
   margin: 0;
 }
 
@@ -5577,7 +5619,7 @@ tr:focus-within>.row-actions .link-btn {
 
   .ledger-entity-stats {
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: 1fr;
     gap: 14px;
     min-width: 0;
   }
@@ -5593,9 +5635,10 @@ tr:focus-within>.row-actions .link-btn {
   }
 
   .customer-summary-value-row {
-    align-items: flex-start;
-    flex-direction: column;
-    gap: 7px;
+    align-items: center;
+    flex-direction: row;
+    flex-wrap: nowrap;
+    gap: 10px;
   }
 
   .ledger-section-heading {
@@ -5640,8 +5683,16 @@ tr:focus-within>.row-actions .link-btn {
 .pertes-history-controls,
 .ledger-history-controls {
   justify-content: flex-start;
-  margin-top: 12px;
-  margin-bottom: 10px;
+  margin-top: 8px;
+  margin-bottom: 8px;
+}
+
+#stock-pertes .pertes-header {
+  margin-bottom: 8px;
+}
+
+#stock-pertes .products-summary {
+  margin: 0 0 8px;
 }
 
 .ledger-history-controls {
