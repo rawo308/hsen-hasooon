@@ -242,6 +242,28 @@ function showMessage(elementId, text, type = 'info') {
   if (type) target.classList.add(type);
 }
 
+// Forms with a write in flight. A submit handler is async, so between the click
+// and the server's answer the button is still live: without this a second click
+// sends a second POST and the record is written twice.
+const submittingForms = new WeakSet();
+
+// Runs `write` with the form's submit button disabled, and refuses to start a
+// second run while the first is still going. The WeakSet is the actual guard --
+// the disabled attribute is only what makes it visible to the operator, and a
+// keyboard Enter can beat it. Always releases, so a failed write can be retried.
+async function submitOnce(form, write) {
+  if (!form || submittingForms.has(form)) return null;
+  const button = form.querySelector('[type="submit"]');
+  submittingForms.add(form);
+  if (button) button.disabled = true;
+  try {
+    return await write();
+  } finally {
+    submittingForms.delete(form);
+    if (button) button.disabled = false;
+  }
+}
+
 function getCustomerById(customerId) {
   return state.customers.find((customer) => customer.id === customerId) || null;
 }
@@ -1123,9 +1145,9 @@ async function handlePerteSubmit(event) {
     items: [{ productId, quantity }]
   };
 
-  const saved = editingPerteId
-    ? await mutate(`/sales/${editingPerteId}`, 'PUT', { ...payload, reason, date, note, items: payload.items })
-    : await mutate('/sales', 'POST', payload);
+  const saved = await submitOnce(event.target, () => (editingPerteId
+    ? mutate(`/sales/${editingPerteId}`, 'PUT', { ...payload, reason, date, note, items: payload.items })
+    : mutate('/sales', 'POST', payload)));
   if (saved === null) return;
   closePerteEditor();
   renderWasteView();
@@ -1885,9 +1907,9 @@ async function handleProductSubmit(event) {
   }
 
   if (!editingProductId && startingStock < 0) return;
-  const saved = editingProductId
-    ? await mutate(`/products/${editingProductId}`, 'PUT', payload)
-    : await mutate('/products', 'POST', { ...payload, stock: startingStock });
+  const saved = await submitOnce(event.target, () => (editingProductId
+    ? mutate(`/products/${editingProductId}`, 'PUT', payload)
+    : mutate('/products', 'POST', { ...payload, stock: startingStock })));
   if (saved === null) return;
   cancelProductEdit();
 }
@@ -1902,9 +1924,9 @@ async function handleCustomerSubmit(event) {
 
   if (!payload.name || !payload.phone) return;
 
-  const saved = editingCustomerId
-    ? await mutate(`/customers/${editingCustomerId}`, 'PUT', payload)
-    : await mutate('/customers', 'POST', payload);
+  const saved = await submitOnce(event.target, () => (editingCustomerId
+    ? mutate(`/customers/${editingCustomerId}`, 'PUT', payload)
+    : mutate('/customers', 'POST', payload)));
   if (saved === null) return;
   cancelCustomerEdit();
 }
@@ -2675,6 +2697,9 @@ function getReportRows() {
 function getReportPayments(filter) {
   const payments = [];
   for (const customer of state.customers) {
+    // Sale rows already drop out when the report is narrowed to one customer, so
+    // without this Encaisse credited them with everyone else's payments too.
+    if (reportFilters.customerId && customer.id !== reportFilters.customerId) continue;
     for (const entry of customer.debtHistory || []) {
       if (entry.type !== 'payment') continue;
       if (!matchesDateRangeFilter(entry.date, filter)) continue;
