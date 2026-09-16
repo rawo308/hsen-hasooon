@@ -191,6 +191,7 @@ p {
 
 .dashboard-sales-value-row {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 10px;
 }
@@ -3725,21 +3726,6 @@ textarea {
     grid-template-columns: 1fr;
   }
 
-  .shared-date-quick {
-    width: 100%;
-    justify-content: space-between;
-  }
-
-  .shared-date-quick>button:not(.calendar-icon-btn) {
-    flex: 1;
-    padding-inline: 7px;
-    font-size: 0.7rem;
-  }
-
-  .shared-date-popover {
-    left: 0;
-  }
-
   .perte-row {
     align-items: stretch;
     flex-direction: column;
@@ -4646,23 +4632,35 @@ body.is-loading .main-panel {
   margin-bottom: 16px;
 }
 
+/* The one date filter: a period list, and a calendar beside it that only opens
+   for "Période personnalisée". */
 .shared-date-filter {
   position: relative;
   width: fit-content;
   max-width: 100%;
+  text-align: left;
 }
 
-.shared-date-control {
+/* Scoped under .shared-date-filter throughout, so a page's broad descendant
+   rules (.ledger-entity-stats div, .dashboard-stat-card strong, ...) cannot
+   reshape it: it must look the same everywhere it is placed. */
+.shared-date-filter span {
+  color: inherit;
+  font-size: inherit;
+}
+
+.shared-date-filter .shared-date-control {
   display: inline-flex;
   align-items: center;
   gap: 6px;
 }
 
-.shared-date-select {
+.shared-date-filter .shared-date-select {
+  display: block;
   position: relative;
 }
 
-.shared-date-select-trigger {
+.shared-date-filter .shared-date-select-trigger {
   display: inline-flex;
   align-items: center;
   gap: 8px;
@@ -4679,18 +4677,23 @@ body.is-loading .main-panel {
   white-space: nowrap;
 }
 
-.shared-date-select-trigger span {
+.shared-date-filter .shared-date-caret {
   margin-left: auto;
   color: var(--muted);
 }
 
-.shared-date-select-trigger:hover,
-.shared-date-select-trigger[aria-expanded="true"] {
+.shared-date-filter .shared-date-select-trigger.has-value {
+  border-color: var(--accent-line);
+}
+
+.shared-date-filter .shared-date-select-trigger:hover,
+.shared-date-filter .shared-date-select-trigger[aria-expanded="true"] {
   border-color: var(--accent-line);
   background: var(--accent-panel);
 }
 
-.shared-date-select-menu {
+.shared-date-filter .shared-date-select-menu {
+  display: block;
   position: absolute;
   z-index: 31;
   top: calc(100% + 6px);
@@ -4700,10 +4703,10 @@ body.is-loading .main-panel {
   border: 1px solid var(--line);
   border-radius: 8px;
   background: var(--panel);
-  box-shadow: var(--shadow);
+  box-shadow: 0 12px 32px rgba(15, 23, 42, 0.14);
 }
 
-.shared-date-select-menu button {
+.shared-date-filter .shared-date-select-menu button {
   display: block;
   width: 100%;
   padding: 8px 9px;
@@ -4716,13 +4719,26 @@ body.is-loading .main-panel {
   white-space: nowrap;
 }
 
-.shared-date-select-menu button:hover,
-.shared-date-select-menu button:focus-visible {
+.shared-date-filter .shared-date-select-menu button:hover,
+.shared-date-filter .shared-date-select-menu button:focus-visible {
   background: var(--accent-panel);
   outline: none;
 }
 
-.shared-date-control .calendar-icon-btn {
+.shared-date-filter .shared-date-select-menu button.active {
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+  font-weight: 700;
+}
+
+.shared-date-filter .shared-date-select-menu .shared-date-menu-reset {
+  margin-top: 4px;
+  border-top: 1px solid var(--line);
+  border-radius: 0 0 5px 5px;
+  color: var(--muted);
+}
+
+.shared-date-filter .shared-date-control .calendar-icon-btn {
   width: 36px;
   height: 36px;
   border: 1px solid var(--line);
@@ -4730,35 +4746,43 @@ body.is-loading .main-panel {
   background: var(--panel);
 }
 
-.shared-date-popover {
-  position: absolute;
-  z-index: 30;
-  top: calc(100% + 8px);
-  left: 0;
-  box-sizing: border-box;
-  width: 258px;
-  max-width: calc(100vw - 28px);
-  max-height: min(390px, calc(100vh - 24px));
-  overflow: auto;
-  padding: 10px;
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  background: var(--panel);
-  box-shadow: var(--shadow);
+.shared-date-filter .shared-date-control .calendar-icon-btn:hover,
+.shared-date-filter .shared-date-control .calendar-icon-btn.active {
+  border-color: var(--accent-line);
+  background: var(--accent-panel);
 }
 
-.shared-date-calendar-head,
-.shared-date-selection,
-.shared-date-actions {
+.shared-date-filter .shared-date-calendar {
+  display: block;
+  position: absolute;
+  z-index: 30;
+  top: 0;
+  left: calc(100% + 8px);
+  width: 252px;
+  max-width: calc(100vw - 24px);
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+  box-shadow: 0 12px 32px rgba(15, 23, 42, 0.14);
+}
+
+/* No room on the right: below the control, shifted to stay on screen. */
+.shared-date-filter .shared-date-calendar.is-below {
+  top: calc(100% + 8px);
+  left: var(--calendar-shift, 0);
+}
+
+.shared-date-filter .shared-date-calendar-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 10px;
 }
 
-.shared-date-calendar-head button {
-  width: 30px;
-  height: 30px;
+.shared-date-filter .shared-date-calendar-head button {
+  width: 28px;
+  height: 28px;
   border: 1px solid var(--line);
   border-radius: 7px;
   background: var(--panel-soft);
@@ -4767,27 +4791,33 @@ body.is-loading .main-panel {
   line-height: 1;
 }
 
-.shared-date-calendar-head strong {
+.shared-date-filter .shared-date-calendar-head strong {
+  font-size: 0.84rem;
   text-transform: capitalize;
 }
 
-.shared-date-weekdays,
-.shared-date-calendar-grid {
+.shared-date-filter .shared-date-weekdays,
+.shared-date-filter .shared-date-calendar-grid {
   display: grid;
   grid-template-columns: repeat(7, 1fr);
-  gap: 1px;
+  gap: 0;
 }
 
-.shared-date-weekdays {
-  margin: 9px 0 3px;
+.shared-date-filter .shared-date-weekdays {
+  margin: 8px 0 3px;
   color: var(--muted);
   font-size: 0.68rem;
   font-weight: 700;
   text-align: center;
 }
 
-.shared-date-day {
-  min-height: 27px;
+.shared-date-filter .shared-date-calendar-grid {
+  row-gap: 2px;
+}
+
+.shared-date-filter .shared-date-day {
+  min-height: 28px;
+  padding: 0;
   border: 0;
   border-radius: 6px;
   background: transparent;
@@ -4795,30 +4825,45 @@ body.is-loading .main-panel {
   font-size: 0.78rem;
 }
 
-.shared-date-day:hover {
-  background: var(--accent-soft);
+.shared-date-filter .shared-date-day:hover {
+  background: #eff6ff;
 }
 
-.shared-date-day.in-range {
+.shared-date-filter .shared-date-day.is-today {
+  box-shadow: inset 0 0 0 1px #93c5fd;
+  font-weight: 700;
+}
+
+.shared-date-filter .shared-date-day.in-range,
+.shared-date-filter .shared-date-day.in-preview {
   border-radius: 0;
   background: #dbeafe;
   color: #1d4ed8;
 }
 
-.shared-date-day.selected {
-  position: relative;
-  z-index: 1;
-  border-radius: 50%;
+.shared-date-filter .shared-date-day.range-start {
+  border-radius: 6px 0 0 6px;
+}
+
+.shared-date-filter .shared-date-day.range-end {
+  border-radius: 0 6px 6px 0;
+}
+
+.shared-date-filter .shared-date-day.selected {
   background: #2563eb;
-  color: white;
+  color: #ffffff;
   font-weight: 800;
 }
 
-.shared-date-empty {
-  min-height: 27px;
+.shared-date-filter .shared-date-empty {
+  min-height: 28px;
 }
 
-.shared-date-selection {
+.shared-date-filter .shared-date-calendar-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
   margin-top: 8px;
   padding-top: 8px;
   border-top: 1px solid var(--line);
@@ -4826,64 +4871,22 @@ body.is-loading .main-panel {
   font-size: 0.72rem;
 }
 
-.shared-date-selection strong {
-  display: block;
-  margin-top: 2px;
-  color: var(--text);
-  font-size: 0.78rem;
-}
-
-.shared-date-actions {
-  margin-top: 8px;
-}
-
-.shared-date-clear {
-  display: inline-grid;
-  place-items: center;
-  width: 28px;
-  height: 28px;
+.shared-date-filter .shared-date-reset {
+  flex: 0 0 auto;
+  padding: 5px 9px;
   border: 1px solid var(--line);
   border-radius: 7px;
   background: var(--panel-soft);
-  color: var(--muted);
-  font-size: 1.1rem;
-  line-height: 1;
+  color: var(--text);
+  font-size: 0.72rem;
+  font-weight: 700;
 }
 
-.shared-date-clear:hover,
-.shared-date-clear:focus-visible {
+.shared-date-filter .shared-date-reset:hover,
+.shared-date-filter .shared-date-reset:focus-visible {
   border-color: var(--accent-line);
   background: var(--accent-soft);
-  color: var(--text);
   outline: none;
-}
-
-.report-mode-toggle {
-  display: inline-flex;
-  gap: 6px;
-  padding: 4px;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  background: var(--panel-soft);
-  width: fit-content;
-}
-
-.report-date-fields {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-}
-
-.report-date-fields label {
-  display: grid;
-  gap: 4px;
-  font-size: 0.78rem;
-  font-weight: 600;
-  color: var(--muted);
-}
-
-.report-date-fields input {
-  min-width: 170px;
 }
 
 .report-field-label {
@@ -5246,21 +5249,42 @@ body.is-loading .main-panel {
   gap: 8px;
 }
 
-.report-customer-field {
-  position: relative;
-  display: grid;
-  gap: 4px;
-  max-width: 340px;
+.report-filter-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 18px;
 }
 
-.report-customer-field label {
-  font-size: 0.78rem;
-  font-weight: 600;
+.report-customer-filter {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: min(300px, 100%);
   color: var(--muted);
+  font-size: 0.76rem;
+  font-weight: 700;
 }
 
-.report-customer-field .history-suggestions {
-  top: 100%;
+.report-customer-filter .pertes-product-picker {
+  flex: 1 1 220px;
+}
+
+.report-customer-option {
+  display: grid;
+  gap: 2px;
+}
+
+.report-customer-option small {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 400;
+}
+
+@media (max-width: 760px) {
+  .report-customer-filter {
+    width: 100%;
+  }
 }
 
 /* Row actions stay out of the way until the row is pointed at or focused, so a
@@ -5577,39 +5601,6 @@ tr:focus-within>.row-actions .link-btn {
   white-space: nowrap;
 }
 
-  margin: 0;
-}
-
-.shared-date-popover {
-  width: 248px;
-  max-height: none;
-  overflow: visible;
-  padding: 8px;
-}
-
-.shared-date-calendar-head button {
-  width: 27px;
-  height: 27px;
-}
-
-.shared-date-weekdays {
-  margin-top: 7px;
-}
-
-.shared-date-day,
-.shared-date-empty {
-  min-height: 24px;
-}
-
-.shared-date-selection {
-  margin-top: 6px;
-  padding-top: 6px;
-}
-
-.shared-date-actions {
-  margin-top: 6px;
-}
-
 @media (max-width: 760px) {
   .ledger-entity-header {
     grid-template-columns: 1fr;
@@ -5875,6 +5866,11 @@ tr:focus-within>.row-actions .link-btn {
 @media (max-width: 620px) {
   .dashboard-summary-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  /* The sales card carries the date filter, which does not fit in half a row. */
+  .dashboard-sales-card {
+    grid-column: 1 / -1;
   }
 
   .dashboard-history-section {

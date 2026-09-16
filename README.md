@@ -588,8 +588,10 @@ Every movement of stock is a row in `sales` with its lines in `sale_items`:
 | `waste` | out | none; valued at selling price | Ventes / Caisse, mode Perte |
 | `adjustment` | in | none | Produits, « Ajouter des unités » |
 
-Prices come from the catalogue for every type except `purchase`, where the price
-the buyer types is what the shop actually paid and nothing else knows it.
+A `sale` or `return` is charged at the unit price on each cart line: the
+catalogue price by default, or whatever the cashier changed it to for that one
+transaction. The product's catalogue price is never changed by it. A `purchase`
+is priced at what the shop paid.
 
 A return settles its money against the customer's outstanding invoices first,
 oldest first, and only the remainder leaves the till as cash. Those credits are
@@ -615,14 +617,14 @@ The current database settings are:
 | `GET/PUT /api/settings` | Read and update the store settings |
 | `GET/POST /api/products`, `PUT/DELETE /api/products/:id` | Product catalogue |
 | `POST /api/products/:id/stock` | Add units to a product's stock, recording an `adjustment` transaction |
-| `GET/POST /api/customers`, `PUT/DELETE /api/customers/:id` | Customer profiles |
-| `GET/POST /api/sales`, `DELETE /api/sales/:id` | Every transaction type; `DELETE` reverses whatever it did to stock and to the ledger |
+| `GET/POST /api/customers`, `PUT/DELETE /api/customers/:id` | Customer profiles; `DELETE` archives the customer (`deleted_at`) and keeps their invoices and payments |
+| `GET/POST /api/sales`, `DELETE /api/sales/:id` | Every transaction type; `DELETE` reverses whatever it did to stock and to the ledger, and is refused when that would take stock below zero or when a return has been taken off the invoice |
 | `POST /api/sales/:id/payments` | Record money received against a credit invoice |
 | `GET/POST /api/expenses`, `PUT/DELETE /api/expenses/:id` | Expenses |
 
-Prices, totals and stock are computed on the server inside a transaction, so the
-browser cannot set a selling price or oversell a product. The single exception is
-a purchase, where the price the buyer types is the cost the shop paid.
+Totals and stock are computed on the server inside a transaction, so the browser
+cannot set a total or oversell a product. Line prices come from the browser for
+sales and returns (the register's cart) and purchases (the cost paid).
 
 ### Rapports
 

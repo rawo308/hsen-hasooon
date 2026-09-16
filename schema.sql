@@ -36,8 +36,13 @@ CREATE TABLE IF NOT EXISTS customers (
   phone TEXT NOT NULL DEFAULT '',
   address TEXT NOT NULL DEFAULT '',
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  -- Set when the customer is "deleted" in the app. The row is kept so their
+  -- invoices and payments stay linked to them for later analysis.
+  deleted_at TIMESTAMPTZ
 );
+
+ALTER TABLE customers ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
 
 -- balance / total_purchased / total_paid used to be stored here and drifted from
 -- the sales they summarise. They are derived on read now (see customer_totals).
@@ -61,7 +66,7 @@ CREATE TABLE IF NOT EXISTS sales (
   type TEXT NOT NULL DEFAULT 'sale'
     CHECK (type IN ('sale', 'return', 'purchase', 'waste', 'adjustment', 'adjustment_out')),
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  customer_id TEXT REFERENCES customers(id) ON DELETE SET NULL,
+  customer_id TEXT REFERENCES customers(id) ON DELETE RESTRICT,
   -- Both NULL on everything except a sale, which is the only type with a tender.
   payment_method TEXT CHECK (payment_method IN ('cash', 'debt')),
   payment_type TEXT CHECK (payment_type IN ('cash', 'partial', 'debt')),
@@ -126,7 +131,7 @@ ALTER TABLE sale_items DROP COLUMN IF EXISTS variant_id;
 -- deleted return take its own credits with it.
 CREATE TABLE IF NOT EXISTS debt_transactions (
   id TEXT PRIMARY KEY,
-  customer_id TEXT NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
+  customer_id TEXT NOT NULL REFERENCES customers(id) ON DELETE RESTRICT,
   sale_id TEXT REFERENCES sales(id) ON DELETE CASCADE,
   return_sale_id TEXT REFERENCES sales(id) ON DELETE CASCADE,
   type TEXT NOT NULL CHECK (type IN ('sale', 'payment')),
@@ -135,6 +140,40 @@ CREATE TABLE IF NOT EXISTS debt_transactions (
 );
 
 ALTER TABLE debt_transactions ADD COLUMN IF NOT EXISTS return_sale_id TEXT REFERENCES sales(id) ON DELETE CASCADE;
+
+-- Customers are archived, never deleted, so nothing that points at one may be
+-- removed or unlinked with it. Earlier installations created these two foreign
+-- keys as ON DELETE SET NULL (sales) and ON DELETE CASCADE (debt_transactions),
+-- which would quietly strip or wipe a customer's history if the row were ever
+-- deleted. They are replaced with RESTRICT, under which such a DELETE fails
+-- instead. Found by what they reference rather than by name, and a no-op once
+-- replaced, so it is safe to re-run on every start like the rest of this file.
+DO $$
+DECLARE
+  fk RECORD;
+BEGIN
+  FOR fk IN
+    SELECT conrelid::regclass AS table_name, conname
+    FROM pg_constraint
+    WHERE contype = 'f'
+      AND confrelid = 'customers'::regclass
+      AND conrelid IN ('sales'::regclass, 'debt_transactions'::regclass)
+      AND confdeltype <> 'r'
+  LOOP
+    EXECUTE format('ALTER TABLE %s DROP CONSTRAINT %I', fk.table_name, fk.conname);
+  END LOOP;
+
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint
+                 WHERE contype = 'f' AND conrelid = 'sales'::regclass AND confrelid = 'customers'::regclass) THEN
+    ALTER TABLE sales ADD CONSTRAINT sales_customer_id_fkey
+      FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE RESTRICT;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint
+                 WHERE contype = 'f' AND conrelid = 'debt_transactions'::regclass AND confrelid = 'customers'::regclass) THEN
+    ALTER TABLE debt_transactions ADD CONSTRAINT debt_transactions_customer_id_fkey
+      FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE RESTRICT;
+  END IF;
+END $$;
 
 CREATE TABLE IF NOT EXISTS expenses (
   id TEXT PRIMARY KEY,

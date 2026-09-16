@@ -435,7 +435,9 @@ async function readSale(client, id) {
   return sale || null;
 }
 
-async function readCustomers(client, where = '', params = []) {
+// Archived customers are left out of every read: the app treats them as gone,
+// while their rows, invoices and payments stay in the database for analysis.
+async function readCustomers(client, condition = '', params = []) {
   const { rows } = await client.query(
     `SELECT c.id, c.name, c.phone, c.address,
             t.total_purchased, t.total_paid, t.balance,
@@ -449,7 +451,7 @@ async function readCustomers(client, where = '', params = []) {
             ), '[]'::json) AS debt_history
      FROM customers c
      LEFT JOIN customer_totals t ON t.customer_id = c.id
-     ${where}
+     WHERE c.deleted_at IS NULL ${condition ? `AND ${condition}` : ''}
      ORDER BY c.name`,
     params
   );
@@ -476,7 +478,7 @@ async function readCustomers(client, where = '', params = []) {
 }
 
 async function readCustomer(client, id) {
-  const [customer] = await readCustomers(client, 'WHERE c.id = $1', [id]);
+  const [customer] = await readCustomers(client, 'c.id = $1', [id]);
   return customer || null;
 }
 
@@ -680,19 +682,28 @@ app.post('/api/customers', requireAuth, requireDatabase, route(async (request, r
 app.put('/api/customers/:id', requireAuth, requireDatabase, route(async (request, response) => {
   const payload = customerPayload(request.body);
   const { rowCount } = await pool.query(
-    'UPDATE customers SET name = $2, phone = $3, address = $4, updated_at = NOW() WHERE id = $1',
+    'UPDATE customers SET name = $2, phone = $3, address = $4, updated_at = NOW() WHERE id = $1 AND deleted_at IS NULL',
     [request.params.id, payload.name, payload.phone, payload.address]
   );
   if (!rowCount) throw new RequestError(404, 'Client introuvable.');
   response.json({ customer: await readCustomer(pool, request.params.id) });
 }));
 
+// Archives rather than deletes. A customer's invoices and payments are the data
+// the business analyses later, so the row stays and keeps every link to them --
+// the foreign keys in schema.sql refuse a real DELETE for that reason. To the app
+// an archived customer is simply gone.
 app.delete('/api/customers/:id', requireAuth, requireDatabase, route(async (request, response) => {
-  const { rows } = await pool.query('SELECT balance FROM customer_totals WHERE customer_id = $1', [request.params.id]);
-  if (!rows.length) throw new RequestError(404, 'Client introuvable.');
-  if (Number(rows[0].balance) > 0) throw new RequestError(409, 'Ce client a encore une dette impayée.');
-  // Their sales stay, with customer_id set to NULL, so the revenue history holds.
-  await pool.query('DELETE FROM customers WHERE id = $1', [request.params.id]);
+  await inTransaction(async (client) => {
+    const { rows } = await client.query(
+      'SELECT id FROM customers WHERE id = $1 AND deleted_at IS NULL FOR UPDATE',
+      [request.params.id]
+    );
+    if (!rows.length) throw new RequestError(404, 'Client introuvable.');
+    const { rows: totals } = await client.query('SELECT balance FROM customer_totals WHERE customer_id = $1', [rows[0].id]);
+    if (Number(totals[0]?.balance || 0) > 0) throw new RequestError(409, 'Ce client a encore une dette impayée.');
+    await client.query('UPDATE customers SET deleted_at = NOW(), updated_at = NOW() WHERE id = $1', [rows[0].id]);
+  });
   response.json({ ok: true });
 }));
 
@@ -707,10 +718,13 @@ app.delete('/api/customers/:id', requireAuth, requireDatabase, route(async (requ
 //   priceSource where a line's unit price comes from
 //   idPrefix    prefix for the generated transaction id
 const TRANSACTION_TYPES = {
-  sale: { stock: -1, lockStock: true, priceSource: 'catalogue', idPrefix: 'sale' },
-  return: { stock: +1, lockStock: false, priceSource: 'catalogue', idPrefix: 'return' },
-  // The only type where the browser's price is the truth: it is what the shop
-  // actually paid, and nothing in the catalogue knows it.
+  // The register's cart lets the cashier change a line's price for this one sale
+  // or return, so that price is what gets charged. A line sent without one falls
+  // back to the catalogue price, which is never changed by it.
+  sale: { stock: -1, lockStock: true, priceSource: 'register', idPrefix: 'sale' },
+  return: { stock: +1, lockStock: false, priceSource: 'register', idPrefix: 'return' },
+  // The browser's price is required here: it is what the shop actually paid, and
+  // nothing in the catalogue knows it.
   purchase: { stock: +1, lockStock: false, priceSource: 'client', idPrefix: 'purchase' },
   // Written off at selling price, so the figure is the revenue lost.
   waste: { stock: -1, lockStock: true, priceSource: 'zero', idPrefix: 'waste' },
@@ -722,8 +736,9 @@ const TRANSACTION_TYPES = {
 
 const WASTE_REASONS = ['Produit périmé', 'Produit avarié', 'Produit endommagé', 'Produit cassé', 'Perdu', 'Pourriture', 'Casse', 'Invendu', 'Vol', 'Autre'];
 
-// Prices and stock are read inside the transaction, so the total is the store's
-// own and two registers cannot oversell the same unit.
+// Stock is read inside the transaction, so two registers cannot oversell the same
+// unit, and totals are always summed here from the line prices rather than taken
+// from the browser.
 async function priceItems(client, rawItems, { lockStock, priceSource = 'catalogue' }) {
   if (!Array.isArray(rawItems) || !rawItems.length) throw new RequestError(400, 'Le panier est vide.');
   if (rawItems.length > 200) throw new RequestError(400, 'Le panier contient trop de lignes.');
@@ -735,9 +750,10 @@ async function priceItems(client, rawItems, { lockStock, priceSource = 'catalogu
     const quantity = nonNegativeInteger(item?.quantity, 'La quantité');
     if (!quantity) throw new RequestError(400, 'La quantité doit être supérieure à 0.');
     quantities.set(productId, (quantities.get(productId) || 0) + quantity);
-    if (priceSource === 'client') {
+    const hasPrice = item?.unitPrice !== undefined && item?.unitPrice !== null && item?.unitPrice !== '';
+    if (priceSource === 'client' || (priceSource === 'register' && hasPrice)) {
       // Two lines for the same product merge, so the last price given wins.
-      clientPrices.set(productId, nonNegativeAmount(item?.unitPrice, 'Le prix d’achat'));
+      clientPrices.set(productId, nonNegativeAmount(item?.unitPrice, priceSource === 'client' ? 'Le prix d’achat' : 'Le prix unitaire'));
     }
   }
 
@@ -755,11 +771,39 @@ async function priceItems(client, rawItems, { lockStock, priceSource = 'catalogu
     if (lockStock && quantity > product.stock) {
       throw new RequestError(409, `Stock insuffisant pour ${product.name} (${product.stock} restant).`);
     }
-    const unitPrice = priceSource === 'client'
+    const unitPrice = clientPrices.has(productId)
       ? clientPrices.get(productId)
       : priceSource === 'zero' ? 0 : Number(product.selling_price);
     return { productId, productName: product.name, quantity, unitPrice, subtotal: money(unitPrice * quantity) };
   });
+}
+
+// Applies signed stock changes, one net figure per product id. Every product is
+// checked against its locked row before anything is written, so an edit that
+// takes units off and puts units back is judged on where the shelf ends up, not
+// on whichever half runs first -- and a change that would leave a shelf below
+// zero is refused rather than clamped, which would hide the missing units.
+async function moveStock(client, changes) {
+  const ids = [...changes.keys()].filter((id) => changes.get(id) !== 0);
+  if (!ids.length) return;
+
+  const { rows } = await client.query(
+    'SELECT id, name, stock FROM products WHERE id = ANY($1::text[]) ORDER BY id FOR UPDATE',
+    [ids]
+  );
+  for (const product of rows) {
+    const change = changes.get(product.id);
+    if (product.stock + change < 0) {
+      throw new RequestError(409, `Stock insuffisant pour ${product.name} : ${product.stock} en stock, cette opération en retirerait ${-change}.`);
+    }
+  }
+  for (const product of rows) {
+    await client.query('UPDATE products SET stock = stock + $2, updated_at = NOW() WHERE id = $1', [product.id, changes.get(product.id)]);
+  }
+}
+
+function addStockChange(changes, productId, change) {
+  changes.set(productId, (changes.get(productId) || 0) + change);
 }
 
 // Pays `amount` off a customer's unpaid invoices, oldest first, as ordinary
@@ -821,7 +865,7 @@ app.post('/api/sales', requireAuth, requireDatabase, route(async (request, respo
 
   const result = await inTransaction(async (client) => {
     if (customerId) {
-      const { rowCount } = await client.query('SELECT 1 FROM customers WHERE id = $1', [customerId]);
+      const { rowCount } = await client.query('SELECT 1 FROM customers WHERE id = $1 AND deleted_at IS NULL', [customerId]);
       if (!rowCount) throw new RequestError(400, 'Client introuvable.');
     }
 
@@ -941,21 +985,20 @@ app.put('/api/sales/:id', requireAuth, requireDatabase, route(async (request, re
       [saleId]
     );
 
-    for (const item of oldItems) {
-      await client.query(
-        `UPDATE products SET stock = stock ${existing.type === 'purchase' ? '-' : '+'} $2, updated_at = NOW() WHERE id = $1`,
-        [item.product_id, item.quantity]
-      );
-    }
-
     const rawItems = Array.isArray(body.items) && body.items.length ? body.items : [];
     if (!rawItems.length) throw new RequestError(400, 'Le panier est vide.');
-    // Restore the old loss first, inside this transaction, so a larger valid
-    // replacement is checked against the stock after undoing the old loss.
-    const items = await priceItems(client, rawItems, existing.type === 'purchase'
-      ? { lockStock: false, priceSource: 'zero' }
-      : { lockStock: true, priceSource: 'zero' });
+    // Stock is checked by moveStock() below, against the net change.
+    const items = await priceItems(client, rawItems, { lockStock: false, priceSource: 'zero' });
     const totalAmount = existing.type === 'purchase' ? 0 : 0;
+
+    // One net change per product: the old lines undone and the new ones applied
+    // together. A purchase corrected from 10 to 12 after 6 were sold moves stock
+    // by +2; undoing all 10 first would dip below zero and wrongly refuse it.
+    const direction = TRANSACTION_TYPES[existing.type].stock;
+    const changes = new Map();
+    for (const item of oldItems) addStockChange(changes, item.product_id, -direction * item.quantity);
+    for (const item of items) addStockChange(changes, item.productId, direction * item.quantity);
+    await moveStock(client, changes);
 
     await client.query('DELETE FROM sale_items WHERE sale_id = $1', [saleId]);
     for (const item of items) {
@@ -964,10 +1007,6 @@ app.put('/api/sales/:id', requireAuth, requireDatabase, route(async (request, re
          VALUES ($1, $2, $3, $4, $5, $6)`,
         [saleId, item.productId, item.productName, item.quantity, item.unitPrice, item.subtotal]
       );
-      await client.query(`UPDATE products SET stock = stock ${existing.type === 'purchase' ? '+' : '-'} $2, updated_at = NOW() WHERE id = $1`, [
-        item.productId,
-        item.quantity
-      ]);
     }
 
     const createdAt = saleDate ? new Date(`${saleDate}T12:00:00`) : new Date(existing.created_at);
@@ -993,19 +1032,37 @@ app.delete('/api/sales/:id', requireAuth, requireDatabase, route(async (request,
     if (!rows.length) throw new RequestError(404, 'Transaction introuvable.');
     const sale = rows[0];
 
+    // A return taken off this invoice has already put some of its units back on
+    // the shelf and cut the customer's debt. Deleting the invoice under it would
+    // count those units twice and wipe the refund along with the invoice's
+    // ledger, so the return has to be deleted first.
+    const { rows: returns } = await client.query(
+      'SELECT DISTINCT return_sale_id AS id FROM debt_transactions WHERE sale_id = $1 AND return_sale_id IS NOT NULL',
+      [sale.id]
+    );
+    if (returns.length) {
+      const numbers = returns.map((entry) => `n°${entry.id.slice(-4)}`).join(', ');
+      throw new RequestError(409, `Le retour ${numbers} a été déduit de cette facture. Supprimez d’abord ce retour.`);
+    }
+
     const { rows: items } = await client.query(
       'SELECT product_id, quantity FROM sale_items WHERE sale_id = $1 AND product_id IS NOT NULL',
       [sale.id]
     );
 
-    // Undo what the transaction did to stock, whichever way it moved it.
+    // Undo what the transaction did to stock, whichever way it moved it. Undoing a
+    // delivery or a return whose units have since been sold is refused.
     const direction = -(TRANSACTION_TYPES[sale.type]?.stock ?? -1);
-    for (const item of items) {
-      await client.query(
-        `UPDATE products SET stock = GREATEST(0, stock + $2), updated_at = NOW() WHERE id = $1`,
-        [item.product_id, direction * item.quantity]
-      );
-    }
+    const changes = new Map();
+    for (const item of items) addStockChange(changes, item.product_id, direction * item.quantity);
+    await moveStock(client, changes);
+
+    // The invoices a return credited, read before the credits disappear, so they
+    // can be sent back with their paid amount and status recomputed.
+    const { rows: credited } = await client.query(
+      'SELECT DISTINCT sale_id FROM debt_transactions WHERE return_sale_id = $1 AND sale_id IS NOT NULL',
+      [sale.id]
+    );
 
     // sale_items and debt_transactions are ON DELETE CASCADE, so the ledger
     // entries for this invoice go with it -- and for a return, the credits it
@@ -1017,7 +1074,10 @@ app.delete('/api/sales/:id', requireAuth, requireDatabase, route(async (request,
       products: items.length
         ? await readProducts(client, 'WHERE id = ANY($1::text[])', [items.map((item) => item.product_id)])
         : [],
-      customer: sale.customer_id ? await readCustomer(client, sale.customer_id) : null
+      customer: sale.customer_id ? await readCustomer(client, sale.customer_id) : null,
+      sales: credited.length
+        ? await readSales(client, 'WHERE s.id = ANY($1::text[])', [credited.map((row) => row.sale_id)])
+        : []
     };
   });
 
@@ -1077,7 +1137,7 @@ app.post('/api/customers/:id/payments', requireAuth, requireDatabase, route(asyn
   const result = await inTransaction(async (client) => {
     // The customer row is the lock for their whole balance: it is what stops two
     // tills from each reading the same outstanding total and both paying it off.
-    const { rows } = await client.query('SELECT id FROM customers WHERE id = $1 FOR UPDATE', [request.params.id]);
+    const { rows } = await client.query('SELECT id FROM customers WHERE id = $1 AND deleted_at IS NULL FOR UPDATE', [request.params.id]);
     if (!rows.length) throw new RequestError(404, 'Client introuvable.');
     const customerId = rows[0].id;
 

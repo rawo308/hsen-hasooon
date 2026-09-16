@@ -6,7 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <meta name="google" content="notranslate" />
   <title>H.H Fruit &ndash; Gestion des stocks et des ventes</title>
-  <link rel="stylesheet" href="/styles.css?v=41" />
+  <link rel="stylesheet" href="/styles.css?v=42" />
 </head>
 
 <body>
@@ -407,7 +407,19 @@
         </header>
 
         <div class="card report-controls">
-          <div id="report-shared-date-filter" class="shared-date-filter"></div>
+          <div class="report-filter-row">
+            <div id="report-shared-date-filter" class="shared-date-filter"></div>
+            <div class="report-customer-filter">
+              <label for="report-customer-search"><span>Client</span></label>
+              <div class="pertes-product-picker" id="report-customer-picker">
+                <input id="report-customer-search" type="search" placeholder="Tous les clients" autocomplete="off"
+                  aria-controls="report-customer-options" aria-expanded="false" />
+                <button type="button" id="clear-report-customer" class="pertes-product-clear hidden"
+                  aria-label="Effacer le client">&times;</button>
+                <div id="report-customer-options" class="pertes-product-options hidden" role="listbox" translate="no"></div>
+              </div>
+            </div>
+          </div>
 
           <div class="report-category-field">
             <span class="report-field-label">Type</span>
@@ -629,7 +641,7 @@
     </form>
   </div>
 
-  <script src="/app.js?v=41"></script>
+  <script src="/app.js?v=42"></script>
 </body>
 
 </html>

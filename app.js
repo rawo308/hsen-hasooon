@@ -318,27 +318,49 @@ function getDateFilterSummary(filter) {
   return 'Période sélectionnée';
 }
 
+// --- Filtre de date ---------------------------------------------------------
+// The one date filter every page uses: a period list, and a calendar that only
+// appears once "Période personnalisée" is picked from it. A page hands over its
+// current filter and a callback; the control never filters anything itself.
+//
+// What it reports is { mode: 'all' | 'day' | 'range', start, end, preset }, the
+// shape matchesDateRangeFilter() reads. `preset` is the period it came from and
+// only decides the label.
+
+const SHARED_DATE_PERIODS = {
+  today: 'Aujourd\'hui',
+  week: 'Cette semaine',
+  month: 'Ce mois',
+  custom: 'Période personnalisée'
+};
+
+const SHARED_DATE_NO_FILTER = { mode: 'all', start: '', end: '', preset: '' };
+
+// Open menus, the month on screen and a half-picked range, per control. Accueil
+// and the client profile rebuild their markup on every change, so this lives
+// here rather than in the DOM and a rebuilt control comes back as it was left.
 const sharedDatePickerState = {};
 
-function sharedDateFilterMarkup(id) {
+function sharedDateFilterMarkup() {
+  const periods = Object.entries(SHARED_DATE_PERIODS)
+    .map(([key, label]) => `<button type="button" role="option" data-date-period="${key}">${label}</button>`)
+    .join('');
   return `
     <div class="shared-date-control" role="group" aria-label="Filtre de date">
       <div class="shared-date-select">
-        <button type="button" class="shared-date-select-trigger" data-date-select aria-haspopup="listbox" aria-expanded="false">Aujourd'hui <span aria-hidden="true">▾</span></button>
-        <div class="shared-date-select-menu hidden" data-date-menu role="listbox">
-          <button type="button" data-date-quick="today" role="option">Aujourd'hui</button>
-          <button type="button" data-date-quick="week" role="option">Cette semaine</button>
-          <button type="button" data-date-quick="month" role="option">Ce mois</button>
+        <button type="button" class="shared-date-select-trigger" data-date-select aria-haspopup="listbox" aria-expanded="false"><span data-date-label></span><span class="shared-date-caret" aria-hidden="true">▾</span></button>
+        <div class="shared-date-select-menu hidden" data-date-menu role="listbox" aria-label="Période">
+          ${periods}
+          <button type="button" class="shared-date-menu-reset" data-date-reset>Effacer le filtre</button>
         </div>
       </div>
-      <button type="button" class="calendar-icon-btn" data-date-calendar aria-label="Ouvrir le calendrier">📅</button>
+      <button type="button" class="calendar-icon-btn" data-date-calendar aria-label="Choisir une période" title="Choisir une période">📅</button>
     </div>
-    <div class="shared-date-popover hidden" data-date-popover>
+    <div class="shared-date-calendar hidden" data-date-panel role="dialog" aria-label="Période personnalisée">
       <div class="shared-date-calendar-head"><button type="button" data-date-prev aria-label="Mois précédent">‹</button><strong data-date-month></strong><button type="button" data-date-next aria-label="Mois suivant">›</button></div>
-      <div class="shared-date-weekdays"><span>L</span><span>M</span><span>M</span><span>J</span><span>V</span><span>S</span><span>D</span></div>
+      <div class="shared-date-weekdays" aria-hidden="true"><span>L</span><span>M</span><span>M</span><span>J</span><span>V</span><span>S</span><span>D</span></div>
       <div class="shared-date-calendar-grid" data-date-grid></div>
-      <div class="shared-date-selection"><span>Début <strong data-date-start>—</strong></span><span>Fin <strong data-date-end>—</strong></span></div>
-      <div class="shared-date-actions"><button type="button" class="primary-btn compact-btn" data-date-apply>Appliquer</button><button type="button" class="shared-date-clear" data-date-clear aria-label="Effacer la sélection" title="Effacer la sélection">&times;</button></div>
+      <div class="shared-date-calendar-foot"><span data-date-hint></span><button type="button" class="shared-date-reset" data-date-clear>Effacer</button></div>
     </div>`;
 }
 
@@ -346,87 +368,234 @@ function sharedDateKey(date) {
   return toDateInputValue(date);
 }
 
-function sharedDateLabel(value) {
-  return value ? new Date(`${value}T12:00:00`).toLocaleDateString('fr-FR') : '—';
+function sharedDateLabel(value, options) {
+  return new Date(`${value}T12:00:00`).toLocaleDateString('fr-FR', options);
+}
+
+// "16/09/2026" for one day, "12/09 – 16/09/2026" for a range inside one year.
+function sharedDateRangeLabel(start, end) {
+  if (!end || start === end) return sharedDateLabel(start);
+  const sameYear = start.slice(0, 4) === end.slice(0, 4);
+  return `${sharedDateLabel(start, sameYear ? { day: '2-digit', month: '2-digit' } : undefined)} – ${sharedDateLabel(end)}`;
 }
 
 function sharedDatePreset(kind) {
   const today = new Date();
   const end = sharedDateKey(today);
-  if (kind === 'today') return { mode: 'day', start: end, end, preset: 'Aujourd\'hui' };
-  if (kind === 'month') return { mode: 'range', start: sharedDateKey(new Date(today.getFullYear(), today.getMonth(), 1)), end, preset: 'Ce mois' };
+  if (kind === 'today') return { mode: 'day', start: end, end, preset: 'today' };
+  if (kind === 'month') return { mode: 'range', start: sharedDateKey(new Date(today.getFullYear(), today.getMonth(), 1)), end, preset: 'month' };
   const day = (today.getDay() + 6) % 7;
   const startDate = new Date(today.getFullYear(), today.getMonth(), today.getDate() - day);
-  return { mode: 'range', start: sharedDateKey(startDate), end, preset: 'Cette semaine' };
+  return { mode: 'range', start: sharedDateKey(startDate), end, preset: 'week' };
 }
 
-function renderSharedDateCalendar(root, id) {
-  const picker = sharedDatePickerState[id];
-  if (!picker) return;
-  const monthDate = new Date(picker.month + '-01T12:00:00');
+// Which entry of the list the filter belongs to, or '' when there is no filter.
+// Dates that did not come from a preset can only have been picked by hand.
+function sharedDateActivePeriod(filter, picker) {
+  if (picker.customPending) return 'custom';
+  if (!filter || filter.mode === 'all' || !filter.start) return '';
+  return SHARED_DATE_PERIODS[filter.preset] ? filter.preset : 'custom';
+}
+
+// Picked dates only replace "Période personnalisée" once the calendar closes:
+// while it is open a shorter label would shrink the control and slide the
+// calendar out from under the pointer between the first and second click.
+function sharedDateTriggerLabel(filter, picker) {
+  const period = sharedDateActivePeriod(filter, picker);
+  if (!period) return 'Toutes les dates';
+  if (period !== 'custom' || picker.calendarOpen) return SHARED_DATE_PERIODS[period];
+  return sharedDateRangeLabel(filter.start, filter.end);
+}
+
+function renderSharedDateCalendar(panel, filter, picker) {
+  const monthDate = new Date(`${picker.month}-01T12:00:00`);
   const firstDay = (monthDate.getDay() + 6) % 7;
   const days = new Date(monthDate.getFullYear(), monthDate.getMonth() + 1, 0).getDate();
+  const today = sharedDateKey(new Date());
+  // Only a hand-picked selection is drawn: a preset was not chosen here.
+  const picked = !picker.customPending && sharedDateActivePeriod(filter, picker) === 'custom';
+  const start = picker.anchor || (picked ? filter.start : '');
+  const end = picker.anchor ? '' : (picked ? filter.end || filter.start : '');
+
   const cells = [];
   for (let index = 0; index < firstDay; index += 1) cells.push('<span class="shared-date-empty"></span>');
   for (let day = 1; day <= days; day += 1) {
     const value = sharedDateKey(new Date(monthDate.getFullYear(), monthDate.getMonth(), day));
-    const inRange = picker.start && picker.end && value >= picker.start && value <= picker.end;
-    const selected = value === picker.start || value === picker.end;
-    cells.push(`<button type="button" class="shared-date-day${inRange ? ' in-range' : ''}${selected ? ' selected' : ''}" data-date-day="${value}">${day}</button>`);
+    const classes = ['shared-date-day'];
+    if (value === today) classes.push('is-today');
+    if (start && end && start !== end && value >= start && value <= end) {
+      classes.push('in-range');
+      if (value === start) classes.push('range-start');
+      if (value === end) classes.push('range-end');
+    }
+    const selected = value === start || value === end;
+    if (selected) classes.push('selected');
+    cells.push(`<button type="button" class="${classes.join(' ')}" data-date-day="${value}" aria-pressed="${selected}">${day}</button>`);
   }
-  root.querySelector('[data-date-month]').textContent = monthDate.toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' });
-  root.querySelector('[data-date-grid]').innerHTML = cells.join('');
-  root.querySelector('[data-date-start]').textContent = sharedDateLabel(picker.start);
-  root.querySelector('[data-date-end]').textContent = sharedDateLabel(picker.end);
+
+  panel.querySelector('[data-date-month]').textContent = monthDate.toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' });
+  panel.querySelector('[data-date-grid]').innerHTML = cells.join('');
+  panel.querySelector('[data-date-hint]').textContent = picker.anchor
+    ? `${sharedDateLabel(picker.anchor)} · choisissez la fin`
+    : start ? sharedDateRangeLabel(start, end) : 'Un jour, ou deux dates';
+}
+
+// The calendar opens to the right of the control. Where the screen has no room
+// for that it drops below instead, nudged sideways so it stays on screen.
+function positionSharedDateCalendar(root, panel) {
+  const gutter = 12;
+  const control = root.querySelector('.shared-date-control').getBoundingClientRect();
+  const rootLeft = root.getBoundingClientRect().left;
+  const width = panel.offsetWidth;
+  const below = control.right + 8 + width > window.innerWidth - gutter;
+  panel.classList.toggle('is-below', below);
+  const shift = below ? Math.max(gutter - rootLeft, Math.min(0, window.innerWidth - gutter - width - rootLeft)) : 0;
+  panel.style.setProperty('--calendar-shift', `${shift}px`);
+}
+
+// Closes every date filter except the one a click landed in; a keypress closes
+// them all. The path is read rather than the target, because picking a date can
+// rebuild the very markup that was clicked before the click reaches the document.
+function closeSharedDateFilters(event) {
+  const inside = event?.type === 'click'
+    ? event.composedPath().find((node) => node?.dataset?.dateFilterId)?.dataset.dateFilterId
+    : undefined;
+  Object.entries(sharedDatePickerState).forEach(([id, picker]) => {
+    if (id === inside || (!picker.menuOpen && !picker.calendarOpen)) return;
+    picker.close();
+  });
 }
 
 function setupSharedDateFilter(root, id, initialFilter, onApply) {
   if (!root) return;
-  root.innerHTML = sharedDateFilterMarkup(id);
-  const initial = initialFilter || { mode: 'all', start: '', end: '' };
-  const month = (initial.start || initial.end || sharedDateKey(new Date())).slice(0, 7);
-  sharedDatePickerState[id] = { start: initial.start || '', end: initial.end || '', month };
-  const picker = sharedDatePickerState[id];
-  const popover = root.querySelector('[data-date-popover]');
-  const selectTrigger = root.querySelector('[data-date-select]');
+  root.innerHTML = sharedDateFilterMarkup();
+  root.dataset.dateFilterId = id;
+
+  let filter = initialFilter && initialFilter.mode !== 'all' && initialFilter.start ? initialFilter : SHARED_DATE_NO_FILTER;
+  const picker = sharedDatePickerState[id] || (sharedDatePickerState[id] = {
+    menuOpen: false, calendarOpen: false, customPending: false, anchor: '', month: ''
+  });
+  if (!picker.month) picker.month = (filter.start || sharedDateKey(new Date())).slice(0, 7);
+
+  const trigger = root.querySelector('[data-date-select]');
   const menu = root.querySelector('[data-date-menu]');
-  const open = () => { popover.classList.remove('hidden'); renderSharedDateCalendar(root, id); };
-  const selectedLabel = initialFilter?.preset || (initialFilter?.mode === 'range' && initialFilter.start && initialFilter.end
-    ? (initialFilter.start === initialFilter.end ? "Aujourd'hui" : 'Période')
-    : initialFilter?.mode === 'all' ? "Aujourd'hui" : "Aujourd'hui");
-  const setSelectedLabel = (label) => { selectTrigger.firstChild.textContent = `${label} `; };
-  setSelectedLabel(selectedLabel);
-  selectTrigger.addEventListener('click', () => {
-    const expanded = menu.classList.toggle('hidden');
-    selectTrigger.setAttribute('aria-expanded', String(!expanded));
+  const calendarButton = root.querySelector('[data-date-calendar]');
+  const panel = root.querySelector('[data-date-panel]');
+
+  const paint = () => {
+    if (!trigger.isConnected) return;
+    const period = sharedDateActivePeriod(filter, picker);
+    root.querySelector('[data-date-label]').textContent = sharedDateTriggerLabel(filter, picker);
+    trigger.classList.toggle('has-value', Boolean(period));
+    trigger.setAttribute('aria-expanded', String(picker.menuOpen));
+    menu.classList.toggle('hidden', !picker.menuOpen);
+    menu.querySelectorAll('[data-date-period]').forEach((button) => {
+      const active = button.dataset.datePeriod === period;
+      button.classList.toggle('active', active);
+      button.setAttribute('aria-selected', String(active));
+    });
+    menu.querySelector('[data-date-reset]').classList.toggle('hidden', filter.mode === 'all');
+    calendarButton.classList.toggle('active', picker.calendarOpen);
+    calendarButton.setAttribute('aria-expanded', String(picker.calendarOpen));
+    panel.classList.toggle('hidden', !picker.calendarOpen);
+    if (picker.calendarOpen) {
+      renderSharedDateCalendar(panel, filter, picker);
+      positionSharedDateCalendar(root, panel);
+    }
+  };
+
+  const apply = (next) => {
+    filter = next;
+    onApply(next);
+    paint();
+  };
+
+  // Closing without picking a date keeps whatever filter was already there.
+  picker.close = () => {
+    picker.menuOpen = false;
+    picker.calendarOpen = false;
+    picker.customPending = false;
+    picker.anchor = '';
+    paint();
+  };
+  picker.repaint = paint;
+
+  const toggleMenu = () => {
+    const opening = !picker.menuOpen;
+    picker.close();
+    picker.menuOpen = opening;
+    paint();
+  };
+
+  trigger.addEventListener('click', toggleMenu);
+
+  // Once a custom period is in play the icon reopens its calendar; otherwise it
+  // opens the list, since the calendar only exists for a custom period.
+  calendarButton.addEventListener('click', () => {
+    if (sharedDateActivePeriod(filter, picker) !== 'custom') return toggleMenu();
+    const opening = !picker.calendarOpen;
+    picker.close();
+    picker.calendarOpen = opening;
+    paint();
   });
-  root.querySelector('[data-date-calendar]').addEventListener('click', open);
-  root.querySelectorAll('[data-date-quick]').forEach((button) => button.addEventListener('click', () => {
-    menu.classList.add('hidden');
-    selectTrigger.setAttribute('aria-expanded', 'false');
-    setSelectedLabel(button.textContent.trim());
-    onApply(sharedDatePreset(button.dataset.dateQuick));
+
+  menu.querySelectorAll('[data-date-period]').forEach((button) => button.addEventListener('click', () => {
+    const period = button.dataset.datePeriod;
+    const wasCustom = sharedDateActivePeriod(filter, picker) === 'custom';
+    picker.close();
+    if (period !== 'custom') return apply(sharedDatePreset(period));
+    picker.customPending = !wasCustom;
+    picker.calendarOpen = true;
+    picker.month = ((wasCustom && filter.start) || sharedDateKey(new Date())).slice(0, 7);
+    paint();
   }));
-  root.querySelector('[data-date-prev]').addEventListener('click', () => { const date = new Date(`${picker.month}-01T12:00:00`); date.setMonth(date.getMonth() - 1); picker.month = sharedDateKey(date).slice(0, 7); renderSharedDateCalendar(root, id); });
-  root.querySelector('[data-date-next]').addEventListener('click', () => { const date = new Date(`${picker.month}-01T12:00:00`); date.setMonth(date.getMonth() + 1); picker.month = sharedDateKey(date).slice(0, 7); renderSharedDateCalendar(root, id); });
-  root.querySelector('[data-date-grid]').addEventListener('click', (event) => {
-    const button = event.target.closest('[data-date-day]');
-    if (!button) return;
-    const value = button.dataset.dateDay;
-    if (!picker.start || picker.end) { picker.start = value; picker.end = ''; }
-    else if (value < picker.start) { picker.end = picker.start; picker.start = value; }
-    else picker.end = value;
-    renderSharedDateCalendar(root, id);
+
+  const reset = () => {
+    picker.close();
+    apply({ ...SHARED_DATE_NO_FILTER });
+  };
+  menu.querySelector('[data-date-reset]').addEventListener('click', reset);
+  panel.querySelector('[data-date-clear]').addEventListener('click', reset);
+
+  const moveMonth = (step) => {
+    const date = new Date(`${picker.month}-01T12:00:00`);
+    date.setMonth(date.getMonth() + step);
+    picker.month = sharedDateKey(date).slice(0, 7);
+    paint();
+  };
+  panel.querySelector('[data-date-prev]').addEventListener('click', () => moveMonth(-1));
+  panel.querySelector('[data-date-next]').addEventListener('click', () => moveMonth(1));
+
+  // The first date filters that single day straight away; a second one turns it
+  // into the range between the two. A third starts over.
+  const grid = panel.querySelector('[data-date-grid]');
+  grid.addEventListener('click', (event) => {
+    const value = event.target.closest('[data-date-day]')?.dataset.dateDay;
+    if (!value) return;
+    picker.customPending = false;
+    if (!picker.anchor) {
+      picker.anchor = value;
+      return apply({ mode: 'day', start: value, end: value, preset: 'custom' });
+    }
+    const [start, end] = [picker.anchor, value].sort();
+    picker.anchor = '';
+    apply({ mode: start === end ? 'day' : 'range', start, end, preset: 'custom' });
   });
-  root.querySelector('[data-date-apply]').addEventListener('click', () => {
-    if (!picker.start) return;
-    setSelectedLabel(picker.end && picker.end !== picker.start ? 'Période' : "Aujourd'hui");
-    onApply({ mode: getDateFilterMode(picker.start, picker.end), start: picker.start, end: picker.end || picker.start, preset: '' });
-    popover.classList.add('hidden');
+
+  // While the end is still to be chosen, the days it would cover are previewed.
+  grid.addEventListener('mouseover', (event) => {
+    const value = event.target.closest('[data-date-day]')?.dataset.dateDay;
+    if (!picker.anchor || !value) return;
+    const [start, end] = [picker.anchor, value].sort();
+    grid.querySelectorAll('[data-date-day]').forEach((day) => {
+      day.classList.toggle('in-preview', day.dataset.dateDay >= start && day.dataset.dateDay <= end);
+    });
   });
-  root.querySelector('[data-date-clear]').addEventListener('click', () => {
-    picker.start = ''; picker.end = ''; setSelectedLabel("Aujourd'hui"); onApply({ mode: 'all', start: '', end: '', preset: '' }); popover.classList.add('hidden');
+  grid.addEventListener('mouseleave', () => {
+    grid.querySelectorAll('.in-preview').forEach((day) => day.classList.remove('in-preview'));
   });
+
+  paint();
 }
 
 function getProductById(productId) {
@@ -1400,7 +1569,7 @@ function cancelCustomerEdit() {
 
 function getTodayFilter() {
   const today = toDateInputValue(new Date());
-  return { mode: 'day', start: today, end: today };
+  return { mode: 'day', start: today, end: today, preset: 'today' };
 }
 
 function getDashboardTransactions() {
@@ -1622,7 +1791,7 @@ function renderClientInvoicePage(container, customer, invoiceId) {
   if (isReturn(invoice)) {
     container.innerHTML = `
       <div class="ledger-page ledger-invoice-page ledger-return-page">
-        <div class="ledger-page-header"><button type="button" class="ledger-back-btn" data-client-back>← Profil de ${customer.name}</button></div>
+        <div class="ledger-page-header"><button type="button" class="ledger-back-btn" data-client-back>← Profil de ${customer.name}</button><div class="ledger-page-actions"><button type="button" class="link-btn danger-link" data-delete-invoice>Supprimer le retour</button></div></div>
         <div class="ledger-entity-header"><div><p class="section-kicker">Détails du retour</p><h3>Retour n°${invoice.id.slice(-4)}</h3><span class="subtle">${new Date(invoice.createdAt).toLocaleString('fr-FR')} · ${customer.name} · ${customer.phone}</span></div><b class="ledger-status ledger-status-return">Retour</b></div>
         <table class="ledger-detail-items"><thead><tr><th>Produit</th><th>Quantité</th><th>Prix unitaire</th><th>Total</th></tr></thead><tbody>${invoice.items.map((item) => `<tr><td>${item.productName}</td><td>${item.quantity}</td><td>${formatMoney(item.unitPrice)}</td><td>${formatMoney(item.subtotal)}</td></tr>`).join('')}</tbody></table>
         <div class="ledger-financial-summary"><div><span>Total du retour</span><strong>${formatMoney(invoice.totalAmount)}</strong></div><div><span>Articles retournés</span><strong>${invoice.items.reduce((sum, item) => sum + Number(item.quantity || 0), 0)}</strong></div></div>
@@ -1630,6 +1799,7 @@ function renderClientInvoicePage(container, customer, invoiceId) {
       </div>
     `;
     container.querySelector('[data-client-back]')?.addEventListener('click', () => navigateClient(`/clients/${encodeURIComponent(customer.id)}`));
+    container.querySelector('[data-delete-invoice]')?.addEventListener('click', () => openDeleteSaleConfirmation(invoice.id));
     return;
   }
 
@@ -1639,7 +1809,7 @@ function renderClientInvoicePage(container, customer, invoiceId) {
   const remaining = getInvoiceRemainingAmount(invoice);
   container.innerHTML = `
     <div class="ledger-page ledger-invoice-page">
-      <div class="ledger-page-header"><button type="button" class="ledger-back-btn" data-client-back>← Profil de ${customer.name}</button></div>
+      <div class="ledger-page-header"><button type="button" class="ledger-back-btn" data-client-back>← Profil de ${customer.name}</button><div class="ledger-page-actions"><button type="button" class="link-btn danger-link" data-delete-invoice>Supprimer la facture</button></div></div>
       <div class="ledger-entity-header"><div><p class="section-kicker">Détails de la facture</p><h3>Facture n°${invoice.id.slice(-4)}</h3><span class="subtle">${new Date(invoice.createdAt).toLocaleString('fr-FR')} · ${customer.name} · ${customer.phone}</span></div><b class="ledger-status ${getInvoiceRemainingAmount(invoice) <= 0 ? 'ledger-status-paid' : ''}">${getInvoiceStatus(invoice)}</b></div>
       <table class="ledger-detail-items"><thead><tr><th>Produit</th><th>Quantité</th><th>Prix unitaire</th><th>Total</th></tr></thead><tbody>${invoice.items.map((item) => `<tr><td>${item.productName}</td><td>${item.quantity}</td><td>${formatMoney(item.unitPrice)}</td><td>${formatMoney(item.subtotal)}</td></tr>`).join('')}</tbody></table>
       <div class="ledger-financial-summary">${invoice.discountPercent > 0 ? `<div><span>Remise (${invoice.discountPercent} %)</span><strong>-${formatMoney(invoice.discount)}</strong></div>` : ''}<div><span>Total de la facture</span><strong>${formatMoney(invoice.totalAmount)}</strong></div><div><span>Total payé</span><strong>${formatMoney(getInvoicePaidAmount(invoice))}</strong></div><div><span>Reste à payer</span><strong>${formatMoney(remaining)}</strong></div><div><span>Statut</span><strong>${getInvoiceStatus(invoice)}</strong></div></div>
@@ -1649,6 +1819,7 @@ function renderClientInvoicePage(container, customer, invoiceId) {
   `;
   container.querySelector('[data-client-back]')?.addEventListener('click', () => navigateClient(`/clients/${encodeURIComponent(customer.id)}`));
   container.querySelector('[data-record-invoice-payment]')?.addEventListener('click', () => openPaymentModal(customer.id, invoice.id));
+  container.querySelector('[data-delete-invoice]')?.addEventListener('click', () => openDeleteSaleConfirmation(invoice.id));
 }
 
 // The business identity printed on every invoice. It is the legal header from
@@ -1857,6 +2028,7 @@ function closeReceipt() {
 }
 
 let pendingDeleteSaleId = null;
+let isDeletingSale = false;
 
 function openDeleteSaleConfirmation(saleId) {
   const sale = state.sales.find((entry) => entry.id === saleId);
@@ -1864,10 +2036,13 @@ function openDeleteSaleConfirmation(saleId) {
   const customer = getCustomerById(sale.customerId);
   pendingDeleteSaleId = saleId;
   const who = customer ? customer.name : 'le client de passage';
-  document.getElementById('delete-sale-title').textContent = isReturn(sale) ? 'Supprimer ce retour ?' : 'Supprimer cette vente ?';
+  const units = plural(sale.items.reduce((sum, item) => sum + Number(item.quantity || 0), 0), 'article');
+  const number = sale.id.slice(-4);
+  document.getElementById('delete-sale-title').textContent = isReturn(sale) ? `Supprimer le retour n°${number} ?` : `Supprimer la facture n°${number} ?`;
   document.getElementById('delete-sale-text').textContent = isReturn(sale)
-    ? `Le retour de ${formatMoney(sale.totalAmount)} pour ${who} sera supprimé et les unités réapprovisionnées seront retirées du stock.`
-    : `La vente de ${formatMoney(sale.totalAmount)} pour ${who} sera supprimée. Le stock, les totaux du client, les dettes et les recettes seront rétablis.`;
+    ? `Le retour de ${formatMoney(sale.totalAmount)} pour ${who} sera supprimé. Les ${units} remis en stock par ce retour en seront retirés.`
+    : `La facture de ${formatMoney(sale.totalAmount)} pour ${who} sera supprimée. Les ${units} vendus retourneront en stock, et les totaux et dettes du client seront rétablis.`;
+  document.getElementById('confirm-delete-sale-btn').textContent = isReturn(sale) ? 'Supprimer le retour' : 'Supprimer la facture';
   document.getElementById('delete-sale-modal').classList.remove('hidden');
 }
 
@@ -1877,19 +2052,28 @@ function closeDeleteSaleConfirmation() {
 }
 
 async function confirmDeleteSale() {
-  if (!pendingDeleteSaleId) return;
-  const saleIndex = state.sales.findIndex((sale) => sale.id === pendingDeleteSaleId);
-  if (saleIndex < 0) return;
+  // A second click while the first delete is in flight would only come back as
+  // "Transaction introuvable", so it is not sent at all.
+  if (!pendingDeleteSaleId || isDeletingSale) return;
+  const sale = state.sales.find((entry) => entry.id === pendingDeleteSaleId);
+  if (!sale) return;
 
-  const sale = state.sales[saleIndex];
   const returning = isReturn(sale);
-  const saved = await mutate(`/sales/${sale.id}`, 'DELETE', null, () => {
-    state.sales = state.sales.filter((entry) => entry.id !== sale.id);
-  });
-  if (saved === null) return;
-  closeDeleteSaleConfirmation();
-  closeReceipt();
-  showMessage('pos-message', returning ? 'Retour supprimé et stock rétabli.' : 'Vente supprimée et écritures rétablies.', 'success');
+  const button = document.getElementById('confirm-delete-sale-btn');
+  isDeletingSale = true;
+  button.disabled = true;
+  try {
+    const saved = await mutate(`/sales/${sale.id}`, 'DELETE', null, () => {
+      state.sales = state.sales.filter((entry) => entry.id !== sale.id);
+    });
+    if (saved === null) return;
+    closeDeleteSaleConfirmation();
+    closeReceipt();
+    setSaveStatus('saved', returning ? 'Retour supprimé. Le stock a été corrigé.' : 'Facture supprimée. Les articles sont revenus en stock.');
+  } finally {
+    isDeletingSale = false;
+    button.disabled = false;
+  }
 }
 
 async function handleProductSubmit(event) {
@@ -2208,7 +2392,7 @@ async function confirmReturn() {
   const saved = await mutate('/sales', 'POST', {
     type: 'return',
     customerId,
-    items: items.map((item) => ({ productId: item.productId, quantity: item.quantity }))
+    items: items.map((item) => ({ productId: item.productId, quantity: item.quantity, unitPrice: item.unitPrice }))
   });
   if (saved === null) return;
 
@@ -2232,7 +2416,8 @@ async function confirmSaleTransaction() {
     paymentType: paymentMethod,
     partialAmount: paymentMethod === 'partial' ? partialAmount : 0,
     discountPercent: saleDiscountPercent,
-    items: items.map((item) => ({ productId: item.productId, quantity: item.quantity }))
+    // The price on each cart line, as the cashier left it, is what gets charged.
+    items: items.map((item) => ({ productId: item.productId, quantity: item.quantity, unitPrice: item.unitPrice }))
   });
   if (saved === null) return;
 
@@ -2504,8 +2689,8 @@ async function completePurchase() {
   if (button) button.disabled = true;
 
   try {
-    // Unlike a sale, the unit price is sent: it is what the shop paid, and
-    // nothing in the catalogue knows it.
+    // A purchase's unit price is what the shop paid; this form does not ask for
+    // it, so the cost is recorded as 0.
     const payload = { type: 'purchase', date: document.getElementById('purchase-date')?.value || '', items: [{ productId: purchaseCart[0].productId, quantity, unitPrice: 0 }] };
     const saved = editingPurchaseId
       ? await mutate(`/sales/${editingPurchaseId}`, 'PUT', payload)
@@ -2627,18 +2812,18 @@ const REPORT_CATEGORIES = {
   return: ['return']
 };
 
-let reportFilters = { mode: 'day', day: '', start: '', end: '', category: 'all', customerId: '' };
+let reportFilters = { mode: 'day', day: '', start: '', end: '', preset: 'today', category: 'all', customerId: '' };
 
 // The date filter this page is currently describing, in the shape the shared
 // matchesDateRangeFilter() helper expects.
 function getReportFilter() {
   if (reportFilters.mode === 'day') {
     const day = reportFilters.day || toDateInputValue(new Date());
-    return { mode: 'day', start: day, end: day };
+    return { mode: 'day', start: day, end: day, preset: reportFilters.preset };
   }
   return getDateFilterMode(reportFilters.start, reportFilters.end) === 'all'
-    ? { mode: 'all', start: '', end: '' }
-    : { mode: getDateFilterMode(reportFilters.start, reportFilters.end), start: reportFilters.start, end: reportFilters.end };
+    ? { mode: 'all', start: '', end: '', preset: '' }
+    : { mode: getDateFilterMode(reportFilters.start, reportFilters.end), start: reportFilters.start, end: reportFilters.end, preset: reportFilters.preset };
 }
 
 // An expense carries a plain calendar day rather than a timestamp, so it is
@@ -2676,6 +2861,10 @@ function getReportRows() {
     const type = getTransactionType(sale);
     if (!REPORT_TYPES[type] || !allowed.has(type)) continue;
     if (!matchesDateRangeFilter(sale.createdAt, filter)) continue;
+    // Narrowing to one customer is a question about trade with them, so the
+    // movements that have no customer drop out rather than showing as noise.
+    if (reportFilters.customerId && sale.customerId !== reportFilters.customerId) continue;
+
     const customer = sale.customerId ? getCustomerById(sale.customerId) : null;
     rows.push({
       id: sale.id,
@@ -2830,7 +3019,7 @@ function reportSettlement(row) {
 // to show.
 function reportRowActions(row) {
   if (row.type === 'sale' || row.type === 'return') {
-    return `<button class="link-btn" data-report-view="${row.id}">Voir</button>`;
+    return `<button class="link-btn" data-report-view="${row.id}">Voir</button><button class="link-btn danger-link" data-report-delete="${row.id}">Supprimer</button>`;
   }
   return '';
 }
@@ -2841,7 +3030,7 @@ function reportTable(rows) {
       <div class="card">
         <div class="empty-state-block">
           <strong>Aucun mouvement sur cette période</strong>
-          <p>Changez la date ou la catégorie pour voir d’autres transactions.</p>
+          <p>Changez la date, le client ou la catégorie pour voir d’autres transactions.</p>
         </div>
       </div>`;
   }
@@ -2884,11 +3073,17 @@ function renderReports() {
   const container = document.getElementById('report-view');
   if (!container) return;
 
+  // A customer deleted while selected has no sales left under their id, so the
+  // filter lets go of them rather than showing an empty report for nobody.
+  if (reportFilters.customerId && !getCustomerById(reportFilters.customerId)) reportFilters.customerId = '';
+  syncReportCustomerField();
+
   const rows = getReportRows();
   const summary = summariseReport(rows);
+  const customer = getReportCustomer();
 
   container.innerHTML = `
-    <p class="report-period">${escapeHtml(reportPeriodLabel())} · ${plural(summary.count, 'mouvement')}</p>
+    <p class="report-period">${escapeHtml(reportPeriodLabel())}${customer ? ` · ${escapeHtml(customer.name)}` : ''} · ${plural(summary.count, 'mouvement')}</p>
     <div class="report-totals" aria-label="Totaux de la période">
       <div class="report-total"><span>Total des ventes</span><strong>${formatMoney(summary.salesValue)}</strong></div>
       <div class="report-total"><span>Total dû</span><strong>${formatMoney(summary.totalDue)}</strong></div>
@@ -2900,6 +3095,54 @@ function renderReports() {
   });
   bind('data-report-view', openReceipt);
   bind('data-report-delete', openDeleteSaleConfirmation);
+}
+
+function getReportCustomer() {
+  return reportFilters.customerId ? getCustomerById(reportFilters.customerId) : null;
+}
+
+// The box shows the chosen customer's name, except while it is being typed in.
+function syncReportCustomerField() {
+  const input = document.getElementById('report-customer-search');
+  const customer = getReportCustomer();
+  if (input && document.activeElement !== input) input.value = customer?.name || '';
+  document.getElementById('clear-report-customer')?.classList.toggle('hidden', !customer);
+}
+
+function renderReportCustomerOptions(query = '') {
+  const options = document.getElementById('report-customer-options');
+  const input = document.getElementById('report-customer-search');
+  if (!options || !input) return;
+  const normalizedQuery = query.trim().toLowerCase();
+  const matches = state.customers
+    .filter((customer) => `${customer.name} ${customer.phone}`.toLowerCase().includes(normalizedQuery))
+    .slice(0, 30);
+  options.innerHTML = matches.length
+    ? matches.map((customer) => `<button type="button" class="pertes-product-option report-customer-option" role="option" data-report-customer-id="${customer.id}"><strong>${escapeHtml(customer.name)}</strong><small>${escapeHtml(customer.phone)}</small></button>`).join('')
+    : '<p class="pertes-product-empty">Aucun client trouvé.</p>';
+  options.classList.remove('hidden');
+  input.setAttribute('aria-expanded', 'true');
+}
+
+function closeReportCustomerOptions() {
+  document.getElementById('report-customer-options')?.classList.add('hidden');
+  document.getElementById('report-customer-search')?.setAttribute('aria-expanded', 'false');
+}
+
+function selectReportCustomer(customerId) {
+  if (!getCustomerById(customerId)) return;
+  reportFilters.customerId = customerId;
+  closeReportCustomerOptions();
+  document.getElementById('report-customer-search')?.blur();
+  renderReports();
+}
+
+function clearReportCustomer() {
+  reportFilters.customerId = '';
+  const input = document.getElementById('report-customer-search');
+  if (input) input.value = '';
+  closeReportCustomerOptions();
+  renderReports();
 }
 
 function setReportCategory(category) {
@@ -2918,6 +3161,7 @@ function buildReportSheet() {
   const rows = getReportRows();
   const summary = summariseReport(rows);
   const categoryLabel = document.querySelector(`[data-report-category="${reportFilters.category}"]`)?.textContent || 'Tout';
+  const customer = getReportCustomer();
 
   const lines = [
     ['Total des ventes', formatMoney(summary.salesValue)],
@@ -2942,6 +3186,7 @@ function buildReportSheet() {
         <div class="report-print-meta">
           <div><span>PÉRIODE</span><strong>${escapeHtml(reportPeriodLabel())}</strong></div>
           <div><span>CATÉGORIE</span><strong>${escapeHtml(categoryLabel)}</strong></div>
+          ${customer ? `<div><span>CLIENT</span><strong>${escapeHtml(customer.name)}</strong></div>` : ''}
           <div><span>ÉDITÉ LE</span><strong>${new Date().toLocaleDateString('fr-FR')}</strong></div>
         </div>
       </header>
@@ -2986,15 +3231,12 @@ function exportReportPdf() {
 }
 
 function setupReportListeners() {
-  setupSharedDateFilter(document.getElementById('report-shared-date-filter'), 'report', {
-    mode: reportFilters.mode,
-    start: reportFilters.mode === 'day' ? reportFilters.day : reportFilters.start,
-    end: reportFilters.mode === 'day' ? reportFilters.day : reportFilters.end
-  }, (filter) => {
+  setupSharedDateFilter(document.getElementById('report-shared-date-filter'), 'report', getReportFilter(), (filter) => {
     reportFilters.mode = filter.mode === 'day' ? 'day' : 'range';
     reportFilters.day = filter.start;
     reportFilters.start = filter.start;
     reportFilters.end = filter.end;
+    reportFilters.preset = filter.preset;
     renderReports();
   });
   document.querySelectorAll('[data-report-category]').forEach((button) => {
@@ -3002,6 +3244,31 @@ function setupReportListeners() {
   });
   document.getElementById('export-report-btn')?.addEventListener('click', exportReportPdf);
 
+  const customerSearch = document.getElementById('report-customer-search');
+  customerSearch?.addEventListener('focus', () => renderReportCustomerOptions(customerSearch.value));
+  customerSearch?.addEventListener('input', () => {
+    // Typing over a chosen customer lets go of them, so the box never shows one
+    // name while the table is filtered by another.
+    if (reportFilters.customerId) {
+      reportFilters.customerId = '';
+      renderReports();
+    }
+    renderReportCustomerOptions(customerSearch.value);
+  });
+  customerSearch?.addEventListener('blur', () => {
+    // Leaving the box half-typed puts the chosen name back, or empties it.
+    setTimeout(syncReportCustomerField, 0);
+  });
+  document.getElementById('report-customer-options')?.addEventListener('mousedown', (event) => event.preventDefault());
+  document.getElementById('report-customer-options')?.addEventListener('click', (event) => {
+    const option = event.target.closest('[data-report-customer-id]');
+    if (option) selectReportCustomer(option.dataset.reportCustomerId);
+  });
+  document.getElementById('clear-report-customer')?.addEventListener('click', clearReportCustomer);
+  document.addEventListener('click', (event) => {
+    const picker = document.getElementById('report-customer-picker');
+    if (picker && !picker.contains(event.target)) closeReportCustomerOptions();
+  });
 }
 
 // --- Dépenses ---------------------------------------------------------------
@@ -3180,11 +3447,14 @@ function renderAll() {
 
 function setupEventListeners() {
   document.querySelector('[data-dashboard-reports]')?.addEventListener('click', () => setActiveTab('reports'));
-  document.addEventListener('click', (event) => {
-    if (event.target.closest('.shared-date-filter')) return;
-    document.querySelectorAll('.shared-date-popover:not(.hidden)').forEach((popover) => popover.classList.add('hidden'));
-    document.querySelectorAll('.shared-date-select-menu:not(.hidden)').forEach((menu) => menu.classList.add('hidden'));
-    document.querySelectorAll('.shared-date-select-trigger[aria-expanded="true"]').forEach((trigger) => trigger.setAttribute('aria-expanded', 'false'));
+  document.addEventListener('click', closeSharedDateFilters);
+  // Listened for on the document: picking a date can rebuild the page and leave
+  // focus on <body>, outside the control.
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') closeSharedDateFilters(event);
+  });
+  window.addEventListener('resize', () => {
+    Object.values(sharedDatePickerState).forEach((picker) => { if (picker.calendarOpen) picker.repaint(); });
   });
   document.getElementById('pos-product-search').addEventListener('input', renderPosProducts);
   document.getElementById('pos-customer-search').addEventListener('input', () => {
