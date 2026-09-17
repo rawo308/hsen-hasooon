@@ -5749,6 +5749,12 @@ tr:focus-within>.row-actions .link-btn {
   line-height: 1.45;
 }
 
+.purchase-history-product small {
+  color: var(--muted);
+  font-size: 0.74rem;
+  overflow-wrap: anywhere;
+}
+
 .purchase-history-quantity strong {
   color: var(--accent-strong);
   font-size: 1.05rem;
@@ -5827,7 +5833,8 @@ tr:focus-within>.row-actions .link-btn {
 }
 
 .purchase-quantity-field,
-.purchase-date-field {
+.purchase-date-field,
+.purchase-note-field {
   display: grid;
   gap: 6px;
   color: var(--muted);
