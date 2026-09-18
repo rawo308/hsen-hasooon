@@ -130,16 +130,18 @@ function recordFailure(key) {
 app.disable('x-powered-by');
 app.use(express.json({ limit: '1mb' }));
 
-// Only the browser assets are public. Serving __dirname would also expose
-// server.js, schema.sql and package.json.
-const sendAsset = (file) => (request, response) => response.sendFile(path.join(__dirname, file));
-app.get('/', sendAsset('index.html'));
-app.get('/index.html', sendAsset('index.html'));
-app.get('/app.js', sendAsset('app.js'));
-app.get('/styles.css', sendAsset('styles.css'));
-app.use('/pics', express.static(path.join(__dirname, 'pics')));
-app.get(['/debts', '/debts/*'], sendAsset('index.html'));
-app.get(['/clients', '/clients/*'], sendAsset('index.html'));
+// Browser assets live in public/, which Vercel serves from its CDN; this covers
+// local runs and any request that still reaches the function.
+app.use(express.static(path.join(__dirname, 'public'), { index: false }));
+
+// Read with readFileSync on a literal path so Vercel's bundler traces the file
+// into the function. sendFile is not traced and failed with ENOENT on Vercel.
+const sendIndex = (request, response) => {
+  response.type('html').send(fs.readFileSync(path.join(__dirname, 'public', 'index.html'), 'utf8'));
+};
+app.get(['/', '/index.html'], sendIndex);
+app.get(['/debts', '/debts/*'], sendIndex);
+app.get(['/clients', '/clients/*'], sendIndex);
 
 // --- auth routes -----------------------------------------------------------
 

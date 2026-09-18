@@ -236,7 +236,7 @@ This prevents a later product price change from changing the historical price of
 
 STAR currently has:
 
-- a static frontend in `index.html`, `styles.css`, and `app.js`
+- a static frontend in `public/` (`index.html`, `styles.css`, `app.js`, `pics/`)
 - an Express API in `server.js`
 - PostgreSQL storage on Aiven
 - database schema and migrations in `schema.sql`
