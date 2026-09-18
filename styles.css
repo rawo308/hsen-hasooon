@@ -2525,22 +2525,14 @@ textarea {
 
 .inv-summary {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1.05fr);
+  grid-template-columns: minmax(0, 1fr);
   align-items: stretch;
-  gap: 18px;
-  margin: 0 20px 16px;
+  gap: 0;
+  margin: 0 20px 0;
 }
 
 .inv-thanks {
-  display: grid;
-  align-content: center;
-  justify-items: center;
-  gap: 2px;
-  padding: 22px 18px;
-  border: 1px solid var(--inv-line);
-  border-radius: 12px;
-  background: var(--inv-soft);
-  text-align: center;
+  display: none;
 }
 
 .inv-thanks strong {
@@ -2612,7 +2604,7 @@ textarea {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 14px 18px;
-  margin: 0 20px 18px;
+  margin: 0 20px 0;
 }
 
 .inv-tax {
@@ -3726,6 +3718,14 @@ textarea {
     grid-template-columns: 1fr;
   }
 
+  .purchase-editor-line .cart-row {
+    grid-template-columns: minmax(0, 1fr) 84px;
+    grid-template-areas:
+      "product remove"
+      "quantity price";
+    gap: 8px;
+  }
+
   .perte-row {
     align-items: stretch;
     flex-direction: column;
@@ -4333,6 +4333,35 @@ body.is-loading .main-panel {
   background: #fffaf1;
   color: #92400e;
   font-size: 0.82rem;
+}
+
+.return-invoice-lookup {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 12px;
+  padding: 10px;
+  border: 1px solid var(--warning);
+  border-radius: 10px;
+  background: #fffaf1;
+}
+
+.return-invoice-lookup .search-field {
+  margin-bottom: 0;
+}
+
+.return-invoice-message {
+  min-height: 1em;
+  margin: 0;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.return-invoice-message.success {
+  color: var(--success);
+}
+
+.return-invoice-message.error {
+  color: var(--danger);
 }
 
 .pos-payment-fields {
@@ -5722,13 +5751,20 @@ tr:focus-within>.row-actions .link-btn {
 
 .purchase-history-row {
   display: grid;
-  grid-template-columns: minmax(92px, 0.8fr) minmax(180px, 1.5fr) minmax(100px, 0.8fr) auto;
+  grid-template-columns: minmax(92px, 0.8fr) minmax(150px, 1.2fr) minmax(90px, 0.7fr) minmax(110px, 0.8fr) auto;
   align-items: center;
   gap: 18px;
   padding: 14px 16px;
   border: 1px solid var(--line);
   border-radius: 9px;
   background: var(--panel);
+  cursor: pointer;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.purchase-history-row:hover {
+  border-color: var(--accent-line);
+  box-shadow: 0 5px 14px rgba(15, 23, 42, 0.06);
 }
 
 .purchase-history-row>div {
@@ -5761,6 +5797,7 @@ tr:focus-within>.row-actions .link-btn {
 
 .purchase-history-total strong {
   color: var(--text);
+  font-size: 1.02rem;
 }
 
 .purchase-history-actions {
@@ -5777,12 +5814,17 @@ tr:focus-within>.row-actions .link-btn {
 }
 
 .purchase-editor-panel {
-  max-width: 620px;
+  width: min(900px, calc(100vw - 32px));
+  max-width: 900px;
+  max-height: min(88vh, 820px);
 }
 
 .purchase-editor-body {
   display: grid;
   gap: 14px;
+  max-height: calc(min(88vh, 820px) - 100px);
+  overflow-y: auto;
+  padding-right: 4px;
 }
 
 .purchase-selector-block,
@@ -5812,24 +5854,83 @@ tr:focus-within>.row-actions .link-btn {
 }
 
 .purchase-product-options .catalog-item {
-  padding: 9px 11px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  flex-direction: row;
+  align-items: center;
+  justify-content: initial;
+  box-sizing: border-box;
+  min-height: 44px;
+  height: auto;
+  gap: 8px;
+  padding: 6px 9px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: var(--panel-soft);
 }
 
+.purchase-product-options .catalog-item .meta {
+  flex: 1;
+  min-width: 0;
+  gap: 2px;
+  overflow: hidden;
+}
+
+.purchase-product-options .catalog-item .meta strong,
+.purchase-product-options .catalog-item .meta small {
+  display: block;
+  line-height: 1.15;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.purchase-product-options .catalog-item .add-btn {
+  width: auto;
+  flex: 0 0 auto;
+  padding: 6px 10px;
+}
+
 .purchase-editor-line .cart-row {
+  grid-template-columns: minmax(0, 1fr) 92px 118px auto;
+  grid-template-areas: "product quantity price remove";
+  align-items: end;
+  gap: 10px;
   margin: 0;
-  padding: 12px;
+  padding: 8px 10px;
   border: 1px solid var(--accent-line);
   border-radius: 9px;
   background: var(--accent-panel);
 }
 
+.purchase-editor-line .cart-product-name,
+.purchase-editor-line .cart-quantity-field,
+.purchase-editor-line .purchase-unit-price-field,
+.purchase-editor-line .cart-remove-btn {
+  min-width: 0;
+}
+
+.purchase-editor-line .cart-product-name {
+  grid-area: product;
+}
+
+.purchase-editor-line .cart-quantity-field {
+  grid-area: quantity;
+}
+
+.purchase-editor-line .purchase-unit-price-field {
+  grid-area: price;
+}
+
+.purchase-editor-line .cart-remove-btn {
+  grid-area: remove;
+}
+
 .purchase-quantity-field,
+.purchase-unit-price-field,
 .purchase-date-field {
   display: grid;
-  gap: 6px;
+  gap: 3px;
   color: var(--muted);
   font-size: 0.78rem;
   font-weight: 700;
@@ -5892,4 +5993,84 @@ tr:focus-within>.row-actions .link-btn {
   .report-table {
     min-width: 720px;
   }
+}
+
+.purchase-unit-price-field input {
+  font-variant-numeric: tabular-nums;
+}
+
+.purchase-details-panel {
+  width: min(860px, calc(100vw - 32px));
+  max-width: 860px;
+}
+
+.purchase-details-body {
+  display: grid;
+  gap: 18px;
+}
+
+.purchase-invoice-meta {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--panel-soft);
+}
+
+.purchase-invoice-meta div {
+  display: grid;
+  gap: 4px;
+}
+
+.purchase-invoice-meta span,
+.purchase-invoice-table th {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.purchase-invoice-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.purchase-invoice-table th,
+.purchase-invoice-table td {
+  padding: 11px 8px;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+}
+
+.purchase-invoice-table th:not(:first-child),
+.purchase-invoice-table td:not(:first-child) {
+  text-align: right;
+}
+
+.purchase-invoice-total {
+  display: flex;
+  justify-content: flex-end;
+  gap: 18px;
+  align-items: baseline;
+  padding-top: 4px;
+  font-size: 0.92rem;
+}
+
+.purchase-invoice-total strong {
+  color: var(--accent-strong);
+  font-family: var(--display-font);
+  font-size: 1.25rem;
+}
+
+.purchase-editor-line .cart-quantity-field,
+.purchase-editor-line .purchase-unit-price-field {
+  font-size: 0.68rem;
+}
+
+.purchase-editor-line .cart-quantity-field input,
+.purchase-editor-line .purchase-unit-price-field input {
+  padding: 6px 8px;
+  border-radius: 7px;
 }

@@ -17,6 +17,7 @@ const emptyState = {
 
 const state = structuredClone(emptyState);
 let cart = [];
+let selectedReturnInvoiceId = null;
 let selectedCustomerInvoiceId = null;
 let selectedDebtCustomerId = null;
 let selectedDebtInvoiceId = null;
@@ -29,8 +30,8 @@ let saleDiscountPercent = 0;
 let pertesFilters = { mode: 'all', start: '', end: '' };
 let editingPerteId = null;
 let pendingDeletePerteId = null;
-// 'sale' keeps the original checkout untouched; 'return' records an independent
-// Retour transaction that puts stock back.
+// 'sale' keeps the original checkout untouched; 'return' requires an existing
+// invoice and records a linked stock and money adjustment.
 let posMode = 'sale';
 
 function setSaveStatus(status, message) {
@@ -761,13 +762,13 @@ const POS_MODES = {
   },
   return: {
     stockLimited: false,
-    wantsCustomer: true,
+    wantsCustomer: false,
     pageTitle: 'Nouveau retour',
     pageSubtitle: 'Choisissez les produits retournés, vérifiez les quantités et validez le retour.',
     statusPill: 'Mode retour',
     cartKicker: 'Retour',
     cartTitle: 'Retour en cours',
-    catalogHint: 'Cliquez sur Ajouter pour enregistrer le retour',
+    catalogHint: 'Recherchez une facture pour afficher ses produits',
     totalLabel: 'Total du retour',
     submitLabel: 'Finaliser le retour',
     customerTitle: 'Client (facultatif)',
@@ -791,6 +792,9 @@ function setPosMode(mode) {
   const nextMode = Object.prototype.hasOwnProperty.call(POS_MODES, mode) ? mode : 'sale';
   if (nextMode === posMode) return;
   posMode = nextMode;
+  cart = [];
+  selectedReturnInvoiceId = null;
+  if (nextMode === 'return') selectedPosCustomerId = null;
 
   // A return may hold more units than are in stock; a sale or a write-off may
   // not. Clamp on the way into a limited mode so an oversized cart can never
@@ -851,14 +855,80 @@ function applyPosMode() {
   document.getElementById('checkout-discount-row')?.classList.toggle('hidden', posMode !== 'sale');
   document.getElementById('pos-customer-block')?.classList.toggle('hidden', !mode.wantsCustomer);
   document.getElementById('pos-return-note')?.classList.toggle('hidden', !returning);
+  document.getElementById('return-invoice-lookup')?.classList.toggle('hidden', !returning);
+  document.getElementById('pos-product-search')?.classList.toggle('hidden', returning && !selectedReturnInvoiceId);
   if (posMode !== 'sale') document.getElementById('partial-payment-field')?.classList.add('hidden');
+}
+
+function getReturnedQuantity(invoice, productId) {
+  return state.sales
+    .filter((sale) => isReturn(sale) && sale.originalSaleId === invoice?.id)
+    .reduce((total, sale) => total + sale.items
+      .filter((item) => item.productId === productId)
+      .reduce((sum, item) => sum + Number(item.quantity || 0), 0), 0);
+}
+
+function getReturnableQuantity(invoice, item) {
+  return Math.max(0, Number(item.quantity || 0) - getReturnedQuantity(invoice, item.productId));
+}
+
+function findInvoiceByNumber(value) {
+  const normalized = String(value || '').trim().toUpperCase();
+  if (!normalized) return null;
+  return state.sales.find((sale) => {
+    if (!isCustomerSale(sale)) return false;
+    const invoiceNumber = `INV-${sale.id.slice(-6).toUpperCase()}`;
+    return normalized === invoiceNumber || normalized === sale.id.toUpperCase() || normalized === sale.id.slice(-6).toUpperCase();
+  }) || null;
+}
+
+function lookupReturnInvoice() {
+  const input = document.getElementById('return-invoice-search');
+  const invoice = findInvoiceByNumber(input?.value);
+  selectedReturnInvoiceId = invoice?.id || null;
+  cart = [];
+  const message = document.getElementById('return-invoice-message');
+  if (message) {
+    message.textContent = invoice ? `Facture INV-${invoice.id.slice(-6).toUpperCase()} trouvée.` : 'Facture introuvable';
+    message.className = `return-invoice-message ${invoice ? 'success' : 'error'}`;
+  }
+  if (invoice) {
+    selectedPosCustomerId = invoice.customerId || null;
+    const customer = getCustomerById(invoice.customerId);
+    const customerInput = document.getElementById('pos-customer-search');
+    if (customerInput) customerInput.value = customer ? `${customer.name} (${customer.phone})` : '';
+  }
+  applyPosMode();
+  renderPosProducts();
+  renderCart();
 }
 
 function renderPosProducts() {
   const searchValue = document.getElementById('pos-product-search')?.value?.toLowerCase() || '';
-  const list = state.products.filter((product) => product.name.toLowerCase().includes(searchValue));
-
   const container = document.getElementById('pos-product-list');
+  if (isReturnMode()) {
+    const invoice = state.sales.find((sale) => sale.id === selectedReturnInvoiceId && isCustomerSale(sale));
+    if (!invoice) {
+      container.innerHTML = '';
+      return;
+    }
+    const items = invoice.items.filter((item) => item.productName.toLowerCase().includes(searchValue));
+    container.innerHTML = items.map((item) => {
+      const remaining = getReturnableQuantity(invoice, item);
+      return `<div class="catalog-item return-invoice-item">
+        <div class="meta"><strong>${escapeHtml(item.productName)}</strong>
+          <small>Vendu : ${item.quantity} · Déjà retourné : ${getReturnedQuantity(invoice, item.productId)} · Restant : ${remaining}</small>
+        </div>
+        <button class="add-btn primary-btn" data-add-product="${item.productId}" ${remaining < 1 ? 'disabled' : ''}>Ajouter</button>
+      </div>`;
+    }).join('');
+    container.querySelectorAll('[data-add-product]').forEach((button) => {
+      button.addEventListener('click', () => addToCart(button.dataset.addProduct));
+    });
+    return;
+  }
+
+  const list = state.products.filter((product) => product.name.toLowerCase().includes(searchValue));
   // A returned product can be out of stock, so return mode never disables Ajouter.
   const limited = isStockLimitedMode();
   container.innerHTML = list.map((product) => `
@@ -879,6 +949,12 @@ function renderPosProducts() {
 function addToCart(productId) {
   const product = getProductById(productId);
   if (!product) return;
+  if (isReturnMode()) {
+    const invoice = state.sales.find((sale) => sale.id === selectedReturnInvoiceId);
+    const sourceItem = invoice?.items.find((item) => item.productId === productId);
+    const existing = cart.find((item) => item.productId === productId);
+    if (!invoice || !sourceItem || Number(existing?.quantity || 0) >= getReturnableQuantity(invoice, sourceItem)) return;
+  }
   const itemKey = getCartItemKey(productId);
   const existing = cart.find((item) => item.key === itemKey);
   // Stock only limits what can be sold; a return puts units back.
@@ -887,12 +963,15 @@ function addToCart(productId) {
   if (existing) {
     existing.quantity += 1;
   } else {
+    const sourceItem = isReturnMode()
+      ? state.sales.find((sale) => sale.id === selectedReturnInvoiceId)?.items.find((item) => item.productId === productId)
+      : null;
     cart.push({
       key: itemKey,
       productId,
       productName: product.name,
       quantity: 1,
-      unitPrice: product.sellingPrice
+      unitPrice: Number(sourceItem?.unitPrice ?? product.sellingPrice)
     });
   }
 
@@ -928,10 +1007,9 @@ function renderCart() {
         <span>Quantité</span>
         <input data-cart-qty="${item.key}" type="number" min="1" value="${item.quantity}" />
       </label>
-      <div class="price-box">
-        <label for="cart-price-${item.key}">Prix unitaire (F CFA)</label>
-        <input id="cart-price-${item.key}" data-cart-price="${item.key}" type="number" step="0.01" min="0" value="${item.unitPrice}" />
-      </div>
+      ${isReturnMode()
+    ? `<div class="price-box"><span>Prix facture</span><strong>${formatMoney(item.unitPrice)}</strong></div>`
+    : `<div class="price-box"><label for="cart-price-${item.key}">Prix unitaire (F CFA)</label><input id="cart-price-${item.key}" data-cart-price="${item.key}" type="number" step="0.01" min="0" value="${item.unitPrice}" /></div>`}
       <div class="cart-line-total">
         <span>Total de la ligne</span>
         <strong>${formatMoney(item.quantity * item.unitPrice)}</strong>
@@ -945,7 +1023,10 @@ function renderCart() {
       if (!item) return;
       const product = getProductById(item.productId);
       const requested = Math.max(1, Math.floor(Number(event.target.value) || 1));
-      item.quantity = isStockLimitedMode() ? Math.min(requested, getAvailableStock(product)) : requested;
+      const invoice = isReturnMode() ? state.sales.find((sale) => sale.id === selectedReturnInvoiceId) : null;
+      const sourceItem = invoice?.items.find((entry) => entry.productId === item.productId);
+      const max = invoice && sourceItem ? getReturnableQuantity(invoice, sourceItem) : Infinity;
+      item.quantity = isReturnMode() ? Math.min(requested, max) : Math.min(requested, getAvailableStock(product));
       renderCart();
     });
   });
@@ -1765,7 +1846,7 @@ function renderClientProfilePage(container, customer) {
       <div class="ledger-table ledger-invoice-list">
         ${transactionHistoryRows.length ? transactionHistoryRows.map((invoice) => isReturn(invoice)
     ? `<button type="button" class="ledger-row invoice-ledger-row ledger-return-row" data-client-invoice-id="${invoice.id}"><span><strong>Retour n°${invoice.id.slice(-4)}</strong><small>${new Date(invoice.createdAt).toLocaleDateString('fr-FR')}</small></span><span><strong>${formatMoney(invoice.totalAmount)}</strong><small>Total du retour</small></span><span><strong>${invoice.items.reduce((sum, item) => sum + Number(item.quantity || 0), 0)}</strong><small>Article(s)</small></span><span class="ledger-remaining"><strong>&mdash;</strong><small>Reste à payer</small></span><span><b class="ledger-status ledger-status-return">Retour</b></span><span class="ledger-arrow">›</span></button>`
-    : `<button type="button" class="ledger-row invoice-ledger-row" data-client-invoice-id="${invoice.id}"><span><strong>Facture n°${invoice.id.slice(-4)}</strong><small>${new Date(invoice.createdAt).toLocaleDateString('fr-FR')}</small></span><span><strong>${formatMoney(invoice.totalAmount)}</strong><small>Total</small></span><span><strong>${formatMoney(getInvoicePaidAmount(invoice))}</strong><small>Payé</small></span><span class="ledger-remaining"><strong>${formatMoney(getInvoiceRemainingAmount(invoice))}</strong><small>Reste à payer</small></span><span><b class="ledger-status ${getInvoiceRemainingAmount(invoice) <= 0 ? 'ledger-status-paid' : ''}">${getInvoiceStatus(invoice)}</b></span><span class="ledger-arrow">›</span></button>`
+    : `<button type="button" class="ledger-row invoice-ledger-row" data-client-invoice-id="${invoice.id}"><span><strong>Facture n°${invoice.id.slice(-4)}</strong><small>${new Date(invoice.createdAt).toLocaleDateString('fr-FR')}</small></span><span><strong>${formatMoney(invoice.totalAmount)}</strong><small>Total${state.sales.some((sale) => isReturn(sale) && sale.originalSaleId === invoice.id) ? ' · Retour' : ''}</small></span><span><strong>${formatMoney(getInvoicePaidAmount(invoice))}</strong><small>Payé</small></span><span class="ledger-remaining"><strong>${formatMoney(getInvoiceRemainingAmount(invoice))}</strong><small>Reste à payer</small></span><span><b class="ledger-status ${getInvoiceRemainingAmount(invoice) <= 0 ? 'ledger-status-paid' : ''}">${getInvoiceStatus(invoice)}</b></span><span class="ledger-arrow">›</span></button>`
   ).join('') : '<p class="empty-state">Aucune transaction pour ce client.</p>'}
       </div>
     </div>
@@ -1794,7 +1875,7 @@ function renderClientInvoicePage(container, customer, invoiceId) {
         <div class="ledger-entity-header"><div><p class="section-kicker">Détails du retour</p><h3>Retour n°${invoice.id.slice(-4)}</h3><span class="subtle">${new Date(invoice.createdAt).toLocaleString('fr-FR')} · ${customer.name} · ${customer.phone}</span></div><b class="ledger-status ledger-status-return">Retour</b></div>
         <table class="ledger-detail-items"><thead><tr><th>Produit</th><th>Quantité</th><th>Prix unitaire</th><th>Total</th></tr></thead><tbody>${invoice.items.map((item) => `<tr><td>${item.productName}</td><td>${item.quantity}</td><td>${formatMoney(item.unitPrice)}</td><td>${formatMoney(item.subtotal)}</td></tr>`).join('')}</tbody></table>
         <div class="ledger-financial-summary"><div><span>Total du retour</span><strong>${formatMoney(invoice.totalAmount)}</strong></div><div><span>Articles retournés</span><strong>${invoice.items.reduce((sum, item) => sum + Number(item.quantity || 0), 0)}</strong></div></div>
-        <p class="ledger-view-only-note">Ce retour est une transaction indépendante. Il ne modifie aucune facture ni aucun solde client.</p>
+        <p class="ledger-view-only-note">Retour lié à la facture n°${invoice.originalSaleId?.slice(-4) || '—'}. Le total et le solde de la facture originale ont été recalculés.</p>
       </div>
     `;
     container.querySelector('[data-client-back]')?.addEventListener('click', () => navigateClient(`/clients/${encodeURIComponent(customer.id)}`));
@@ -1810,8 +1891,8 @@ function renderClientInvoicePage(container, customer, invoiceId) {
     <div class="ledger-page ledger-invoice-page">
       <div class="ledger-page-header"><button type="button" class="ledger-back-btn" data-client-back>← Profil de ${customer.name}</button><div class="ledger-page-actions"><button type="button" class="link-btn danger-link" data-delete-invoice>Supprimer la facture</button></div></div>
       <div class="ledger-entity-header"><div><p class="section-kicker">Détails de la facture</p><h3>Facture n°${invoice.id.slice(-4)}</h3><span class="subtle">${new Date(invoice.createdAt).toLocaleString('fr-FR')} · ${customer.name} · ${customer.phone}</span></div><b class="ledger-status ${getInvoiceRemainingAmount(invoice) <= 0 ? 'ledger-status-paid' : ''}">${getInvoiceStatus(invoice)}</b></div>
-      <table class="ledger-detail-items"><thead><tr><th>Produit</th><th>Quantité</th><th>Prix unitaire</th><th>Total</th></tr></thead><tbody>${invoice.items.map((item) => `<tr><td>${item.productName}</td><td>${item.quantity}</td><td>${formatMoney(item.unitPrice)}</td><td>${formatMoney(item.subtotal)}</td></tr>`).join('')}</tbody></table>
-      <div class="ledger-financial-summary">${invoice.discountPercent > 0 ? `<div><span>Remise (${invoice.discountPercent} %)</span><strong>-${formatMoney(invoice.discount)}</strong></div>` : ''}<div><span>Total de la facture</span><strong>${formatMoney(invoice.totalAmount)}</strong></div><div><span>Total payé</span><strong>${formatMoney(getInvoicePaidAmount(invoice))}</strong></div><div><span>Reste à payer</span><strong>${formatMoney(remaining)}</strong></div><div><span>Statut</span><strong>${getInvoiceStatus(invoice)}</strong></div></div>
+      <table class="ledger-detail-items"><thead><tr><th>Produit</th><th>Quantité restante</th><th>Prix unitaire</th><th>Total original</th></tr></thead><tbody>${invoice.items.map((item) => `<tr><td>${item.productName}</td><td>${Math.max(0, Number(item.quantity) - getReturnedQuantity(invoice, item.productId))}</td><td>${formatMoney(item.unitPrice)}</td><td>${formatMoney(item.subtotal)}</td></tr>`).join('')}</tbody></table>
+      <div class="ledger-financial-summary">${invoice.discountPercent > 0 ? `<div><span>Remise (${invoice.discountPercent} %)</span><strong>-${formatMoney(invoice.discount)}</strong></div>` : ''}<div><span>Total de la facture</span><strong>${formatMoney(invoice.totalAmount)}</strong></div><div><span>Total retourné</span><strong>${formatMoney(state.sales.filter((sale) => isReturn(sale) && sale.originalSaleId === invoice.id).reduce((sum, sale) => sum + Number(sale.totalAmount || 0), 0))}</strong></div><div><span>Total payé</span><strong>${formatMoney(getInvoicePaidAmount(invoice))}</strong></div><div><span>Reste à payer</span><strong>${formatMoney(remaining)}</strong></div><div><span>Statut</span><strong>${getInvoiceStatus(invoice)}</strong></div></div>
       <div class="ledger-payment-history"><h4>Historique des paiements</h4>${payments.length ? payments.map((payment, index) => `<div><span><strong>Paiement ${index + 1}</strong><small>${new Date(payment.date).toLocaleDateString('fr-FR')}</small></span><strong>${formatMoney(payment.amount)}</strong></div>`).join('') : '<p class="empty-state">Aucun paiement enregistré pour cette facture.</p>'}</div>
       ${remaining > 0 ? `<button type="button" class="primary-btn" data-record-invoice-payment>Enregistrer un paiement</button>` : '<p class="ledger-paid-note">Facture entièrement réglée.</p>'}
     </div>
@@ -1873,6 +1954,8 @@ function openReceipt(saleId) {
   const settings = state.settings || {};
   const customer = getCustomerById(sale.customerId);
   const returning = isReturn(sale);
+  const linkedReturns = state.sales.filter((entry) => isReturn(entry) && entry.originalSaleId === sale.id);
+  const returnedValue = linkedReturns.reduce((sum, entry) => sum + Number(entry.totalAmount || 0), 0);
 
   const subtotal = sale.items.reduce((sum, item) => sum + (item.subtotal ?? item.quantity * item.unitPrice), 0);
   const discount = Number(sale.discount || 0);
@@ -1960,7 +2043,7 @@ function openReceipt(saleId) {
         </div>
       </header>
 
-      ${returning ? '<p class="invoice-return-banner">RETOUR</p>' : ''}
+      ${returning ? '<p class="invoice-return-banner">RETOUR</p>' : linkedReturns.length ? `<p class="invoice-return-banner">RETOUR ENREGISTRÉ · ${invoiceAmountWithUnit(returnedValue)}</p>` : ''}
 
       <div class="inv-meta">
         <div><span>DATE</span><strong>${escapeHtml(shortDate)}</strong></div>
@@ -1982,10 +2065,6 @@ function openReceipt(saleId) {
       </table>
 
       <section class="inv-summary">
-        <div class="inv-thanks">
-          <strong>Merci</strong>
-          <span>${escapeHtml(thanks.replace(/^Merci\s*/i, '')) || 'pour votre confiance !'}</span>
-        </div>
         <div class="inv-totals">${totalsRows}</div>
       </section>
 
@@ -2010,10 +2089,6 @@ function openReceipt(saleId) {
         </div>
       </section>
 
-      <footer class="inv-strapline">
-        <span class="inv-strapline-mark" aria-hidden="true"></span>
-        <span>${escapeHtml(INVOICE_BUSINESS.strapline)}</span>
-      </footer>
     </div>
   `;
 
@@ -2300,10 +2375,12 @@ function completeSale() {
   const customerId = selectedPosCustomerId;
   const totalAmount = getCartTotal();
 
-  // A return is not a payment: the refund settles the customer's debt first and
-  // only the remainder leaves the till, so the client stays optional.
   if (returning) {
-    pendingSale = { type: 'return', customerId: customerId || null, totalAmount, items: structuredClone(cart) };
+    if (!selectedReturnInvoiceId) {
+      showMessage('pos-message', 'Recherchez d’abord une facture valide.', 'error');
+      return;
+    }
+    pendingSale = { type: 'return', originalSaleId: selectedReturnInvoiceId, customerId: customerId || null, totalAmount, items: structuredClone(cart) };
     const customer = customerId ? getCustomerById(customerId) : null;
     document.getElementById('sale-confirm-title').textContent = 'Finaliser ce retour ?';
     document.getElementById('sale-confirm-text').textContent =
@@ -2360,11 +2437,18 @@ async function confirmSale() {
 // on screen, inviting exactly the second click this prevents.
 function clearPos() {
   cart = [];
+  selectedReturnInvoiceId = null;
   saleDiscountPercent = 0;
   selectedPosCustomerId = null;
 
   const setValue = (id, value) => { const el = document.getElementById(id); if (el) el.value = value; };
   setValue('pos-product-search', '');
+  setValue('return-invoice-search', '');
+  const returnMessage = document.getElementById('return-invoice-message');
+  if (returnMessage) {
+    returnMessage.textContent = '';
+    returnMessage.className = 'return-invoice-message';
+  }
   setValue('pos-customer-search', '');
   setValue('sale-discount-percent', 0);
   setValue('payment-method-select', 'cash');
@@ -2383,15 +2467,12 @@ function clearPos() {
   renderCart();
 }
 
-// An independent Retour transaction: it never links to the original invoice.
-// The money is settled against whatever the customer still owes, and the server
-// says how much of it had to come out of the till.
 async function confirmReturn() {
-  const { customerId, items } = pendingSale;
+  const { originalSaleId, items } = pendingSale;
   const saved = await mutate('/sales', 'POST', {
     type: 'return',
-    customerId,
-    items: items.map((item) => ({ productId: item.productId, quantity: item.quantity, unitPrice: item.unitPrice }))
+    originalSaleId,
+    items: items.map((item) => ({ productId: item.productId, quantity: item.quantity }))
   });
   if (saved === null) return;
 
@@ -2472,10 +2553,16 @@ function closePurchaseProductOptions() {
 function addToPurchase(productId) {
   const product = getProductById(productId);
   if (!product) return;
-  const existing = purchaseCart.find((item) => item.productId === productId);
-  purchaseCart = [{ productId, productName: product.name, quantity: purchaseCart[0]?.quantity || 1, unitPrice: 0 }];
-  document.getElementById('purchase-product-search').value = product.name;
-  document.getElementById('clear-purchase-product')?.classList.remove('hidden');
+  if (purchaseCart.some((item) => item.productId === productId)) return;
+  purchaseCart = [...purchaseCart, {
+    productId,
+    productName: product.name,
+    quantity: 1,
+    unitPrice: Number(product.sellingPrice)
+  }];
+  document.getElementById('purchase-product-search').value = '';
+  document.getElementById('purchase-product-search').focus();
+  document.getElementById('clear-purchase-product')?.classList.add('hidden');
   document.getElementById('purchase-product-list').innerHTML = '';
   renderPurchaseCart();
 }
@@ -2502,10 +2589,14 @@ function renderPurchaseCart() {
     <div class="cart-row">
       <div class="cart-product-name"><strong>${escapeHtml(item.productName)}</strong></div>
       <label class="cart-quantity-field">
-        <span>Quantité à ajouter</span>
+        <span>Quantité</span>
         <input data-purchase-qty="${item.productId}" type="number" min="1" step="1" value="${item.quantity}" />
       </label>
-      <button class="link-btn cart-remove-btn" data-purchase-remove="${item.productId}">Changer</button>
+      <label class="purchase-unit-price-field">
+        <span>Prix unitaire</span>
+        <input data-purchase-price="${item.productId}" type="number" min="0" step="0.01" value="${item.unitPrice}" />
+      </label>
+      <button class="link-btn cart-remove-btn" data-purchase-remove="${item.productId}">Retirer</button>
     </div>
   `).join('');
 
@@ -2514,6 +2605,16 @@ function renderPurchaseCart() {
       const item = purchaseCart.find((entry) => entry.productId === input.dataset.purchaseQty);
       if (!item) return;
       item.quantity = Math.max(1, Math.floor(Number(event.target.value) || 1));
+      renderPurchaseCart();
+    });
+  });
+
+  container.querySelectorAll('[data-purchase-price]').forEach((input) => {
+    input.addEventListener('change', (event) => {
+      const item = purchaseCart.find((entry) => entry.productId === input.dataset.purchasePrice);
+      if (!item) return;
+      const price = Number(event.target.value);
+      item.unitPrice = Number.isFinite(price) && price >= 0 ? price : 0;
       renderPurchaseCart();
     });
   });
@@ -2601,20 +2702,48 @@ function renderPurchaseHistory() {
   list.innerHTML = rows.length ? rows.map((sale) => {
     const units = sale.items.reduce((sum, item) => sum + Number(item.quantity || 0), 0);
     const total = Number(sale.totalAmount || 0);
-    const products = sale.items.map((item) => `${escapeHtml(item.productName)}`).join('<br>');
     return `<article class="purchase-history-row" data-purchase-row="${sale.id}">
       <div class="purchase-history-date"><span>Date</span><strong>${new Date(sale.createdAt).toLocaleDateString('fr-FR')}</strong></div>
-      <div class="purchase-history-product"><span>Produit</span><strong>${products}</strong></div>
+      <div class="purchase-history-product"><span>Conteneur</span><strong>Achat n°${sale.id.slice(-6).toUpperCase()}</strong></div>
       <div class="purchase-history-quantity"><span>Quantité ajoutée</span><strong>${units}</strong><small>article${units > 1 ? 's' : ''}</small></div>
+      <div class="purchase-history-total"><span>Total</span><strong>${formatMoney(total)}</strong></div>
       <div class="purchase-history-actions"><button type="button" class="link-btn" data-purchase-view="${sale.id}">Voir</button><button type="button" class="link-btn" data-purchase-edit="${sale.id}">Modifier</button><button type="button" class="link-btn danger-link" data-purchase-delete="${sale.id}">Supprimer</button></div>
     </article>`;
   }).join('') : '<div class="empty-state-block"><strong>Aucun achat enregistré</strong><p>Les ajouts au stock apparaîtront ici.</p></div>';
+  list.querySelectorAll('[data-purchase-row]').forEach((row) => row.addEventListener('click', (event) => {
+    if (event.target.closest('button')) return;
+    openPurchaseDetails(row.dataset.purchaseRow);
+  }));
   list.querySelectorAll('[data-purchase-view]').forEach((button) => button.addEventListener('click', () => {
     const sale = state.sales.find((entry) => entry.id === button.dataset.purchaseView);
-    if (sale) window.alert(`${sale.items.map((item) => `${item.productName} · ${item.quantity}`).join('\n')}\n${new Date(sale.createdAt).toLocaleDateString('fr-FR')}`);
+    if (sale) openPurchaseDetails(sale.id);
   }));
   list.querySelectorAll('[data-purchase-edit]').forEach((button) => button.addEventListener('click', () => openPurchaseEditor(button.dataset.purchaseEdit)));
   list.querySelectorAll('[data-purchase-delete]').forEach((button) => button.addEventListener('click', () => deletePurchase(button.dataset.purchaseDelete)));
+}
+
+function openPurchaseDetails(purchaseId) {
+  const purchase = state.sales.find((sale) => sale.id === purchaseId && getTransactionType(sale) === 'purchase');
+  if (!purchase) return;
+  const units = purchase.items.reduce((sum, item) => sum + Number(item.quantity || 0), 0);
+  document.getElementById('purchase-details-title').textContent = `Achat n°${purchase.id.slice(-6).toUpperCase()}`;
+  document.getElementById('purchase-details-body').innerHTML = `
+    <div class="purchase-invoice-meta">
+      <div><span>Date</span><strong>${new Date(purchase.createdAt).toLocaleDateString('fr-FR')}</strong></div>
+      <div><span>Conteneur</span><strong>${units} unité${units > 1 ? 's' : ''}</strong></div>
+      <div><span>Total</span><strong>${formatMoney(purchase.totalAmount)}</strong></div>
+    </div>
+    <table class="purchase-invoice-table">
+      <thead><tr><th>Produit</th><th>Quantité</th><th>Prix unitaire</th><th>Total</th></tr></thead>
+      <tbody>${purchase.items.map((item) => `<tr><td>${escapeHtml(item.productName)}</td><td>${item.quantity}</td><td>${formatMoney(item.unitPrice)}</td><td>${formatMoney(item.subtotal)}</td></tr>`).join('')}</tbody>
+    </table>
+    <div class="purchase-invoice-total"><span>Total du conteneur</span><strong>${formatMoney(purchase.totalAmount)}</strong></div>
+  `;
+  document.getElementById('purchase-details-modal').classList.remove('hidden');
+}
+
+function closePurchaseDetails() {
+  document.getElementById('purchase-details-modal')?.classList.add('hidden');
 }
 
 function renderPurchaseHistoryProductOptions(query = '') {
@@ -2653,16 +2782,18 @@ async function deletePurchase(purchaseId) {
 function openPurchaseEditor(purchaseId = null) {
   const sale = purchaseId ? state.sales.find((entry) => entry.id === purchaseId && getTransactionType(entry) === 'purchase') : null;
   editingPurchaseId = sale?.id || null;
-  const item = sale?.items?.[0];
-  purchaseCart = item ? [{ productId: item.productId, productName: item.productName, quantity: item.quantity, unitPrice: 0 }] : [];
-  document.getElementById('purchase-product-search').value = item?.productName || '';
-  document.getElementById('clear-purchase-product')?.classList.toggle('hidden', !item);
-  document.getElementById('purchase-quantity').value = item?.quantity || 1;
+  purchaseCart = sale?.items?.map((item) => ({
+    productId: item.productId,
+    productName: item.productName,
+    quantity: item.quantity,
+    unitPrice: Number(item.unitPrice ?? getProductById(item.productId)?.sellingPrice ?? 0)
+  })) || [];
+  document.getElementById('purchase-product-search').value = '';
+  document.getElementById('clear-purchase-product')?.classList.add('hidden');
   document.getElementById('purchase-date').value = sale?.createdAt ? toDateInputValue(new Date(sale.createdAt)) : toDateInputValue(new Date());
   document.getElementById('purchase-editor-title').textContent = sale ? 'Modifier l’ajout au stock' : 'Ajouter au stock';
   showMessage('purchase-message', '', '');
   renderPurchaseProducts();
-  if (item) document.getElementById('purchase-product-list').innerHTML = '';
   renderPurchaseCart();
   document.getElementById('purchase-editor-modal').classList.remove('hidden');
   document.getElementById('purchase-product-search').focus();
@@ -2677,9 +2808,9 @@ function closePurchaseEditor() {
 
 async function completePurchase() {
   if (isSavingPurchase) return;
-  const quantity = Number(document.getElementById('purchase-quantity')?.value || 0);
-  if (!purchaseCart.length || !Number.isInteger(quantity) || quantity <= 0) {
-    showMessage('purchase-message', 'Sélectionnez un produit et indiquez une quantité valide.', 'error');
+  const hasInvalidQuantity = purchaseCart.some((item) => !Number.isInteger(Number(item.quantity)) || Number(item.quantity) <= 0);
+  if (!purchaseCart.length || hasInvalidQuantity) {
+    showMessage('purchase-message', 'Sélectionnez au moins un produit et indiquez des quantités valides.', 'error');
     return;
   }
 
@@ -2688,9 +2819,11 @@ async function completePurchase() {
   if (button) button.disabled = true;
 
   try {
-    // A purchase's unit price is what the shop paid; this form does not ask for
-    // it, so the cost is recorded as 0.
-    const payload = { type: 'purchase', date: document.getElementById('purchase-date')?.value || '', items: [{ productId: purchaseCart[0].productId, quantity, unitPrice: 0 }] };
+    const payload = {
+      type: 'purchase',
+      date: document.getElementById('purchase-date')?.value || '',
+      items: purchaseCart.map(({ productId, quantity, unitPrice }) => ({ productId, quantity, unitPrice }))
+    };
     const saved = editingPurchaseId
       ? await mutate(`/sales/${editingPurchaseId}`, 'PUT', payload)
       : await mutate('/sales', 'POST', payload);
@@ -2701,7 +2834,7 @@ async function completePurchase() {
     closePurchaseEditor();
     showMessage(
       'purchase-message',
-      `Achat enregistré : ${formatMoney(saved.sale.totalAmount)}. Le stock a été mis à jour.`,
+      `Achat enregistré : ${purchaseCart.length} produit${purchaseCart.length > 1 ? 's' : ''}. Le stock a été mis à jour.`,
       'success'
     );
   } finally {
@@ -2760,6 +2893,10 @@ function setupPurchaseListeners() {
   document.getElementById('cancel-purchase-editor')?.addEventListener('click', closePurchaseEditor);
   document.getElementById('purchase-editor-modal')?.addEventListener('click', (event) => {
     if (event.target.id === 'purchase-editor-modal') closePurchaseEditor();
+  });
+  document.getElementById('close-purchase-details')?.addEventListener('click', closePurchaseDetails);
+  document.getElementById('purchase-details-modal')?.addEventListener('click', (event) => {
+    if (event.target.id === 'purchase-details-modal') closePurchaseDetails();
   });
   document.getElementById('toggle-new-purchase-product-btn')?.addEventListener('click', () => {
     const fields = document.getElementById('new-purchase-product-fields');
@@ -3456,6 +3593,13 @@ function setupEventListeners() {
     Object.values(sharedDatePickerState).forEach((picker) => { if (picker.calendarOpen) picker.repaint(); });
   });
   document.getElementById('pos-product-search').addEventListener('input', renderPosProducts);
+  document.getElementById('lookup-return-invoice')?.addEventListener('click', lookupReturnInvoice);
+  document.getElementById('return-invoice-search')?.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      lookupReturnInvoice();
+    }
+  });
   document.getElementById('pos-customer-search').addEventListener('input', () => {
     selectedPosCustomerId = null;
     renderPosCustomerField();

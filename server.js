@@ -368,6 +368,7 @@ function toSale(row) {
     id: row.id,
     type: row.type,
     createdAt: row.created_at?.toISOString?.() ?? row.created_at,
+    originalSaleId: row.original_sale_id || null,
     customerId: row.customer_id,
     totalAmount,
     discount: Number(row.discount || 0),
@@ -408,7 +409,7 @@ function toSale(row) {
 // --- read queries ----------------------------------------------------------
 
 const SALE_COLUMNS = `
-  s.id, s.type, s.created_at, s.customer_id, s.payment_method, s.payment_type,
+  s.id, s.type, s.created_at, s.original_sale_id, s.customer_id, s.payment_method, s.payment_type,
   s.total_amount, s.discount, s.discount_percent, s.supplier, s.reason, s.note, s.cash_refund, p.paid,
   COALESCE((
     SELECT json_agg(json_build_object(
@@ -723,8 +724,8 @@ const TRANSACTION_TYPES = {
   // back to the catalogue price, which is never changed by it.
   sale: { stock: -1, lockStock: true, priceSource: 'register', idPrefix: 'sale' },
   return: { stock: +1, lockStock: false, priceSource: 'register', idPrefix: 'return' },
-  // The browser's price is required here: it is what the shop actually paid, and
-  // nothing in the catalogue knows it.
+  // A purchase defaults to the catalogue selling price in the browser, while
+  // allowing the operator to record a different unit price for the container.
   purchase: { stock: +1, lockStock: false, priceSource: 'client', idPrefix: 'purchase' },
   // Written off at selling price, so the figure is the revenue lost.
   waste: { stock: -1, lockStock: true, priceSource: 'zero', idPrefix: 'waste' },
@@ -864,12 +865,58 @@ app.post('/api/sales', requireAuth, requireDatabase, route(async (request, respo
     : null;
 
   const result = await inTransaction(async (client) => {
+    let originalSale = null;
+    let originalItems = [];
+    if (type === 'return') {
+      const originalSaleId = requiredText(body.originalSaleId, 'La facture');
+      const { rows } = await client.query('SELECT * FROM sales WHERE id = $1 AND type = \'sale\' FOR UPDATE', [originalSaleId]);
+      if (!rows.length) throw new RequestError(404, 'Facture introuvable.');
+      originalSale = rows[0];
+      const { rows: itemRows } = await client.query(
+        `SELECT product_id, product_name, quantity, unit_price, subtotal
+         FROM sale_items WHERE sale_id = $1 ORDER BY id`,
+        [originalSaleId]
+      );
+      originalItems = itemRows;
+    }
     if (customerId) {
       const { rowCount } = await client.query('SELECT 1 FROM customers WHERE id = $1 AND deleted_at IS NULL', [customerId]);
       if (!rowCount) throw new RequestError(400, 'Client introuvable.');
     }
 
-    const items = await priceItems(client, body.items, rules);
+    let items;
+    if (type === 'return') {
+      if (!Array.isArray(body.items) || !body.items.length) throw new RequestError(400, 'Le panier est vide.');
+      const requested = new Map();
+      for (const rawItem of body.items) {
+        const productId = requiredText(rawItem?.productId, 'Le produit', { max: 100 });
+        const quantity = nonNegativeInteger(rawItem?.quantity, 'La quantité');
+        if (!quantity) throw new RequestError(400, 'La quantité doit être supérieure à 0.');
+        requested.set(productId, (requested.get(productId) || 0) + quantity);
+      }
+      const priorRows = await client.query(
+        `SELECT si.product_id, COALESCE(SUM(si.quantity), 0) AS quantity
+         FROM sales r JOIN sale_items si ON si.sale_id = r.id
+         WHERE r.original_sale_id = $1 AND r.type = 'return'
+         GROUP BY si.product_id`,
+        [originalSale.id]
+      );
+      const alreadyReturned = new Map(priorRows.rows.map((row) => [row.product_id, Number(row.quantity)]));
+      const sourceByProduct = new Map(originalItems.map((item) => [item.product_id, item]));
+      items = [...requested.entries()].map(([productId, quantity]) => {
+        const source = sourceByProduct.get(productId);
+        if (!source) throw new RequestError(400, 'Un produit du retour ne fait pas partie de cette facture.');
+        const remaining = Number(source.quantity) - (alreadyReturned.get(productId) || 0);
+        if (quantity > remaining) {
+          throw new RequestError(409, `Retour impossible pour ${source.product_name} : ${remaining} restant(s) retournable(s).`);
+        }
+        const unitPrice = Number(source.unit_price);
+        return { productId, productName: source.product_name, quantity, unitPrice, subtotal: money(unitPrice * quantity) };
+      });
+      if (!items.length) throw new RequestError(400, 'Le panier est vide.');
+    } else {
+      items = await priceItems(client, body.items, rules);
+    }
     const subtotal = money(items.reduce((sum, item) => sum + item.subtotal, 0));
 
     // Only a sale is discountable; nothing else is being negotiated.
@@ -878,7 +925,7 @@ app.post('/api/sales', requireAuth, requireDatabase, route(async (request, respo
       throw new RequestError(400, 'La remise doit être comprise entre 0 et 100 %.');
     }
     const discount = money(subtotal * discountPercent / 100);
-    const totalAmount = money(subtotal - discount);
+    const totalAmount = type === 'return' ? subtotal : money(subtotal - discount);
 
     let paymentMethod = null;
     let paymentType = null;
@@ -905,6 +952,39 @@ app.post('/api/sales', requireAuth, requireDatabase, route(async (request, respo
     if (type === 'waste') {
       reason = optionalText(body.reason, { max: 100 }) || 'Autre';
       if (!WASTE_REASONS.includes(reason)) throw new RequestError(400, 'Motif de perte invalide.');
+    }
+
+    if (type === 'return') {
+      const nextTotal = money(Number(originalSale.total_amount) - totalAmount);
+      if (nextTotal < 0) throw new RequestError(409, 'Le retour dépasse le total de la facture.');
+      const paidBefore = originalSale.payment_method === 'cash'
+        ? Number(originalSale.total_amount)
+        : Number((await client.query('SELECT paid FROM sale_payments WHERE sale_id = $1', [originalSale.id])).rows[0]?.paid || 0);
+      const outstandingBefore = Math.max(0, Number(originalSale.total_amount) - paidBefore);
+      const cashRefund = money(Math.max(0, totalAmount - outstandingBefore));
+      const saleId = newId(rules.idPrefix);
+      const createdAt = new Date();
+      await client.query(
+        `INSERT INTO sales (id, type, created_at, original_sale_id, customer_id, payment_method,
+                            total_amount, discount, discount_percent, cash_refund)
+         VALUES ($1, 'return', $2, $3, $4, NULL, $5, 0, 0, $6)`,
+        [saleId, createdAt, originalSale.id, originalSale.customer_id, totalAmount, cashRefund]
+      );
+      for (const item of items) {
+        await client.query(
+          `INSERT INTO sale_items (sale_id, product_id, product_name, quantity, unit_price, subtotal)
+           VALUES ($1, $2, $3, $4, $5, $6)`,
+          [saleId, item.productId, item.productName, item.quantity, item.unitPrice, item.subtotal]
+        );
+        await client.query('UPDATE products SET stock = stock + $2, updated_at = NOW() WHERE id = $1', [item.productId, item.quantity]);
+      }
+      await client.query('UPDATE sales SET total_amount = $2 WHERE id = $1', [originalSale.id, nextTotal]);
+      return {
+        sale: await readSale(client, saleId),
+        sales: [await readSale(client, originalSale.id)],
+        products: await readProducts(client, 'WHERE id = ANY($1::text[])', [items.map((item) => item.productId)]),
+        customer: originalSale.customer_id ? await readCustomer(client, originalSale.customer_id) : null
+      };
     }
 
     const saleId = newId(rules.idPrefix);
@@ -943,15 +1023,6 @@ app.post('/api/sales', requireAuth, requireDatabase, route(async (request, respo
       }
     }
 
-    // The refund: what the customer still owes is written off first, and only
-    // the remainder is money out of the till. A walk-in return is all cash.
-    if (type === 'return') {
-      const cashRefund = customerId
-        ? (await creditCustomerDebt(client, { customerId, amount: totalAmount, returnSaleId: saleId })).left
-        : totalAmount;
-      await client.query('UPDATE sales SET cash_refund = $2 WHERE id = $1', [saleId, cashRefund]);
-    }
-
     return {
       sale: await readSale(client, saleId),
       products: await readProducts(client, 'WHERE id = ANY($1::text[])', [items.map((item) => item.productId)]),
@@ -988,7 +1059,10 @@ app.put('/api/sales/:id', requireAuth, requireDatabase, route(async (request, re
     const rawItems = Array.isArray(body.items) && body.items.length ? body.items : [];
     if (!rawItems.length) throw new RequestError(400, 'Le panier est vide.');
     // Stock is checked by moveStock() below, against the net change.
-    const items = await priceItems(client, rawItems, { lockStock: false, priceSource: 'zero' });
+    const items = await priceItems(client, rawItems, {
+      lockStock: false,
+      priceSource: existing.type === 'purchase' ? 'client' : 'zero'
+    });
     const totalAmount = existing.type === 'purchase' ? 0 : 0;
 
     // One net change per product: the old lines undone and the new ones applied
@@ -1026,11 +1100,19 @@ app.put('/api/sales/:id', requireAuth, requireDatabase, route(async (request, re
 
 app.delete('/api/sales/:id', requireAuth, requireDatabase, route(async (request, response) => {
   const result = await inTransaction(async (client) => {
-    const { rows } = await client.query('SELECT id, type, customer_id FROM sales WHERE id = $1 FOR UPDATE', [
+    const { rows } = await client.query('SELECT id, type, customer_id, original_sale_id, total_amount FROM sales WHERE id = $1 FOR UPDATE', [
       request.params.id
     ]);
     if (!rows.length) throw new RequestError(404, 'Transaction introuvable.');
     const sale = rows[0];
+
+    if (sale.type === 'sale') {
+      const { rowCount } = await client.query(
+        "SELECT 1 FROM sales WHERE original_sale_id = $1 AND type = 'return' LIMIT 1",
+        [sale.id]
+      );
+      if (rowCount) throw new RequestError(409, 'Cette facture possède des retours. Supprimez d’abord les retours liés.');
+    }
 
     // A return taken off this invoice has already put some of its units back on
     // the shelf and cut the customer's debt. Deleting the invoice under it would
@@ -1056,6 +1138,13 @@ app.delete('/api/sales/:id', requireAuth, requireDatabase, route(async (request,
     const changes = new Map();
     for (const item of items) addStockChange(changes, item.product_id, direction * item.quantity);
     await moveStock(client, changes);
+
+    if (sale.type === 'return' && sale.original_sale_id) {
+      await client.query(
+        'UPDATE sales SET total_amount = total_amount + $2 WHERE id = $1',
+        [sale.original_sale_id, sale.total_amount]
+      );
+    }
 
     // The invoices a return credited, read before the credits disappear, so they
     // can be sent back with their paid amount and status recomputed.

@@ -6,7 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <meta name="google" content="notranslate" />
   <title>H.H Fruit &ndash; Gestion des stocks et des ventes</title>
-  <link rel="stylesheet" href="/styles.css?v=42" />
+  <link rel="stylesheet" href="/styles.css?v=44" />
 </head>
 
 <body>
@@ -73,6 +73,14 @@
                 <h3>Produits</h3>
               </div>
               <span class="catalog-hint" id="pos-catalog-hint">Cliquez sur Ajouter pour créer la vente</span>
+            </div>
+            <div id="return-invoice-lookup" class="return-invoice-lookup hidden">
+              <label class="search-field">
+                <span>N° de facture</span>
+                <input id="return-invoice-search" type="search" placeholder="N° INV-7843E5" autocomplete="off" />
+              </label>
+              <button type="button" id="lookup-return-invoice" class="secondary-btn">Rechercher la facture</button>
+              <p id="return-invoice-message" class="return-invoice-message" aria-live="polite"></p>
             </div>
             <label class="search-field">
               <span>Rechercher un produit</span>
@@ -369,8 +377,6 @@
                   <div id="purchase-product-list" class="purchase-product-options" translate="no"></div>
                 </div>
                 <div id="purchase-cart-items" class="purchase-editor-line"></div>
-                <label class="purchase-quantity-field"><span>Quantité à ajouter</span><input id="purchase-quantity"
-                    type="number" min="1" step="1" value="1" required /></label>
                 <label class="purchase-date-field"><span>Date</span><input id="purchase-date" type="date"
                     required /></label>
                 <div id="purchase-message" class="message-box"></div>
@@ -378,6 +384,21 @@
                     class="secondary-btn">Annuler</button><button id="complete-purchase-btn"
                     class="primary-btn">Enregistrer</button></div>
               </div>
+            </div>
+          </div>
+
+          <div id="purchase-details-modal" class="modal product-editor-modal hidden" role="dialog" aria-modal="true"
+            aria-labelledby="purchase-details-title">
+            <div class="modal-content purchase-details-panel">
+              <div class="products-section-heading editor-modal-heading">
+                <div>
+                  <p class="section-kicker">Achat / Conteneur</p>
+                  <h3 id="purchase-details-title">Détail de l’achat</h3>
+                </div>
+                <button type="button" id="close-purchase-details" class="icon-btn" aria-label="Fermer"
+                  title="Fermer">&times;</button>
+              </div>
+              <div id="purchase-details-body" class="purchase-details-body"></div>
             </div>
           </div>
         </div>
