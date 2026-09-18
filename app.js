@@ -2711,11 +2711,7 @@ function renderPurchaseHistory() {
     const total = Number(sale.totalAmount || 0);
     return `<article class="purchase-history-row" data-purchase-row="${sale.id}">
       <div class="purchase-history-date"><span>Date</span><strong>${new Date(sale.createdAt).toLocaleDateString('fr-FR')}</strong></div>
-<<<<<<< HEAD
       <div class="purchase-history-product"><span>Conteneur</span><strong>Achat n°${sale.id.slice(-6).toUpperCase()}</strong></div>
-=======
-      <div class="purchase-history-product"><span>Produit</span><strong>${products}</strong>${sale.note ? `<small>${escapeHtml(sale.note)}</small>` : ''}</div>
->>>>>>> f50853237fae777b1aeb03be4500344eae6f9387
       <div class="purchase-history-quantity"><span>Quantité ajoutée</span><strong>${units}</strong><small>article${units > 1 ? 's' : ''}</small></div>
       <div class="purchase-history-total"><span>Total</span><strong>${formatMoney(total)}</strong></div>
       <div class="purchase-history-actions"><button type="button" class="link-btn" data-purchase-view="${sale.id}">Voir</button><button type="button" class="link-btn" data-purchase-edit="${sale.id}">Modifier</button><button type="button" class="link-btn danger-link" data-purchase-delete="${sale.id}">Supprimer</button></div>
@@ -2727,11 +2723,7 @@ function renderPurchaseHistory() {
   }));
   list.querySelectorAll('[data-purchase-view]').forEach((button) => button.addEventListener('click', () => {
     const sale = state.sales.find((entry) => entry.id === button.dataset.purchaseView);
-<<<<<<< HEAD
     if (sale) openPurchaseDetails(sale.id);
-=======
-    if (sale) window.alert(`${sale.items.map((item) => `${item.productName} · ${item.quantity}`).join('\n')}\n${new Date(sale.createdAt).toLocaleDateString('fr-FR')}${sale.note ? `\nNote : ${sale.note}` : ''}`);
->>>>>>> f50853237fae777b1aeb03be4500344eae6f9387
   }));
   list.querySelectorAll('[data-purchase-edit]').forEach((button) => button.addEventListener('click', () => openPurchaseEditor(button.dataset.purchaseEdit)));
   list.querySelectorAll('[data-purchase-delete]').forEach((button) => button.addEventListener('click', () => deletePurchase(button.dataset.purchaseDelete)));
@@ -2835,19 +2827,10 @@ async function completePurchase() {
   if (button) button.disabled = true;
 
   try {
-<<<<<<< HEAD
     const payload = {
       type: 'purchase',
       date: document.getElementById('purchase-date')?.value || '',
       items: purchaseCart.map(({ productId, quantity, unitPrice }) => ({ productId, quantity, unitPrice }))
-=======
-    // The shop does not track what it paid for stock, so the cost is recorded as 0.
-    const payload = {
-      type: 'purchase',
-      date: document.getElementById('purchase-date')?.value || '',
-      note: document.getElementById('purchase-note')?.value.trim() || '',
-      items: [{ productId: purchaseCart[0].productId, quantity, unitPrice: 0 }]
->>>>>>> f50853237fae777b1aeb03be4500344eae6f9387
     };
     const saved = editingPurchaseId
       ? await mutate(`/sales/${editingPurchaseId}`, 'PUT', payload)

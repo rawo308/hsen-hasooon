@@ -8,8 +8,9 @@ const { Pool, types } = require('pg');
 
 const app = express();
 const port = Number(process.env.PORT || 3000);
-const isVercel = process.env.VERCEL === '1';
+const isVercel = process.env.VERCEL === '1' || process.env.VERCEL === 'true';
 const isProduction = isVercel || process.env.NODE_ENV === 'production';
+app.set('trust proxy', 1);
 const databaseUrl = process.env.DATABASE_URL;
 const schemaPath = path.join(__dirname, 'schema.sql');
 const hasDatabaseCredentials = databaseUrl && !databaseUrl.includes('USERNAME:PASSWORD@HOST:PORT/DATABASE');
