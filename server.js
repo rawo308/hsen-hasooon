@@ -53,8 +53,9 @@ const pool = hasDatabaseCredentials
 // --- session helpers -------------------------------------------------------
 
 function matches(candidate, expected) {
-  const a = crypto.createHash('sha256').update(String(candidate)).digest();
-  const b = crypto.createHash('sha256').update(String(expected)).digest();
+  const a = Buffer.from(String(candidate), 'utf8');
+  const b = Buffer.from(String(expected), 'utf8');
+  if (a.length !== b.length) return false;
   return crypto.timingSafeEqual(a, b);
 }
 
@@ -1325,8 +1326,12 @@ app.use((error, request, response, next) => {
     return response.status(409).json({ error: 'Stock insuffisant pour cette opération.' });
   }
 
-  console.error('Unhandled error:', error?.message);
-  return response.status(500).json({ error: 'Erreur interne du serveur.' });
+  console.error('Unhandled error:', { message: error?.message, stack: error?.stack, code: error?.code, constraint: error?.constraint });
+  return response.status(500).json({
+    error: process.env.NODE_ENV === 'production'
+      ? 'Erreur interne du serveur.'
+      : (error?.message || 'Erreur interne du serveur.')
+  });
 });
 
 async function start() {
