@@ -389,6 +389,7 @@ function toSale(row) {
   }
   if (row.type === 'purchase') {
     sale.supplier = row.supplier || '';
+    sale.note = row.note || '';
     return sale;
   }
   if (row.type === 'waste') {
@@ -858,7 +859,7 @@ app.post('/api/sales', requireAuth, requireDatabase, route(async (request, respo
   if ((type === 'waste' || type === 'purchase') && saleDate && !/^\d{4}-\d{2}-\d{2}$/.test(saleDate)) {
     throw new RequestError(400, `La date de l${type === 'purchase' ? '’achat' : 'a perte'} est invalide.`);
   }
-  const note = type === 'waste' ? optionalText(body.note, { max: 500 }) : '';
+  const note = type === 'waste' || type === 'purchase' ? optionalText(body.note, { max: 500 }) : '';
   // A supplier delivery and a write-off have no customer, whatever was sent.
   const customerId = CUSTOMER_TYPES.has(type) && typeof body.customerId === 'string' && body.customerId
     ? body.customerId
@@ -1049,7 +1050,7 @@ app.put('/api/sales/:id', requireAuth, requireDatabase, route(async (request, re
     }
     const reason = existing.type === 'waste' ? optionalText(body.reason, { max: 100 }) || 'Autre' : '';
     if (existing.type === 'waste' && !WASTE_REASONS.includes(reason)) throw new RequestError(400, 'Motif de perte invalide.');
-    const note = existing.type === 'waste' ? optionalText(body.note, { max: 500 }) : '';
+    const note = optionalText(body.note, { max: 500 });
 
     const { rows: oldItems } = await client.query(
       'SELECT product_id, quantity FROM sale_items WHERE sale_id = $1 AND product_id IS NOT NULL',

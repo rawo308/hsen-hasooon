@@ -269,6 +269,13 @@ function getCustomerById(customerId) {
   return state.customers.find((customer) => customer.id === customerId) || null;
 }
 
+// Deleted customers are not loaded, so an invoice that names a customer the
+// state does not hold belonged to one who has since been deleted.
+function saleCustomerName(sale, customer = getCustomerById(sale.customerId)) {
+  if (customer) return customer.name;
+  return sale.customerId ? 'Ancien client' : 'Client de passage';
+}
+
 function getDateFilterMode(startValue, endValue) {
   if (!startValue && !endValue) return 'all';
   if (startValue && endValue && startValue !== endValue) return 'range';
@@ -1729,7 +1736,7 @@ function renderDashboard() {
     return `
       <div class="dashboard-transaction-row">
         <span><strong>${new Date(sale.createdAt).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}</strong><small>${returning ? 'Retour' : 'Vente'}</small></span>
-        <span><strong>${customer ? escapeHtml(customer.name) : 'Client de passage'}</strong></span>
+        <span><strong>${escapeHtml(saleCustomerName(sale, customer))}</strong></span>
         <strong>${formatMoney(sale.totalAmount)}</strong>
         <span class="dashboard-transaction-status">${returning ? 'Retour' : getInvoiceStatus(sale)}</span>
       </div>`;
@@ -2034,7 +2041,7 @@ function openReceipt(saleId) {
           </div>
           <div class="inv-client-row">
             <span>CLIENT :</span>
-            <b>${customer ? escapeHtml(customer.name) : 'Client de passage'}</b>
+            <b>${escapeHtml(saleCustomerName(sale, customer))}</b>
           </div>
           <div class="inv-client-row">
             <span>SITE :</span>
@@ -2109,7 +2116,7 @@ function openDeleteSaleConfirmation(saleId) {
   if (!sale) return;
   const customer = getCustomerById(sale.customerId);
   pendingDeleteSaleId = saleId;
-  const who = customer ? customer.name : 'le client de passage';
+  const who = customer ? customer.name : sale.customerId ? 'un ancien client' : 'le client de passage';
   const units = plural(sale.items.reduce((sum, item) => sum + Number(item.quantity || 0), 0), 'article');
   const number = sale.id.slice(-4);
   document.getElementById('delete-sale-title').textContent = isReturn(sale) ? `Supprimer le retour n°${number} ?` : `Supprimer la facture n°${number} ?`;
@@ -2704,7 +2711,11 @@ function renderPurchaseHistory() {
     const total = Number(sale.totalAmount || 0);
     return `<article class="purchase-history-row" data-purchase-row="${sale.id}">
       <div class="purchase-history-date"><span>Date</span><strong>${new Date(sale.createdAt).toLocaleDateString('fr-FR')}</strong></div>
+<<<<<<< HEAD
       <div class="purchase-history-product"><span>Conteneur</span><strong>Achat n°${sale.id.slice(-6).toUpperCase()}</strong></div>
+=======
+      <div class="purchase-history-product"><span>Produit</span><strong>${products}</strong>${sale.note ? `<small>${escapeHtml(sale.note)}</small>` : ''}</div>
+>>>>>>> f50853237fae777b1aeb03be4500344eae6f9387
       <div class="purchase-history-quantity"><span>Quantité ajoutée</span><strong>${units}</strong><small>article${units > 1 ? 's' : ''}</small></div>
       <div class="purchase-history-total"><span>Total</span><strong>${formatMoney(total)}</strong></div>
       <div class="purchase-history-actions"><button type="button" class="link-btn" data-purchase-view="${sale.id}">Voir</button><button type="button" class="link-btn" data-purchase-edit="${sale.id}">Modifier</button><button type="button" class="link-btn danger-link" data-purchase-delete="${sale.id}">Supprimer</button></div>
@@ -2716,7 +2727,11 @@ function renderPurchaseHistory() {
   }));
   list.querySelectorAll('[data-purchase-view]').forEach((button) => button.addEventListener('click', () => {
     const sale = state.sales.find((entry) => entry.id === button.dataset.purchaseView);
+<<<<<<< HEAD
     if (sale) openPurchaseDetails(sale.id);
+=======
+    if (sale) window.alert(`${sale.items.map((item) => `${item.productName} · ${item.quantity}`).join('\n')}\n${new Date(sale.createdAt).toLocaleDateString('fr-FR')}${sale.note ? `\nNote : ${sale.note}` : ''}`);
+>>>>>>> f50853237fae777b1aeb03be4500344eae6f9387
   }));
   list.querySelectorAll('[data-purchase-edit]').forEach((button) => button.addEventListener('click', () => openPurchaseEditor(button.dataset.purchaseEdit)));
   list.querySelectorAll('[data-purchase-delete]').forEach((button) => button.addEventListener('click', () => deletePurchase(button.dataset.purchaseDelete)));
@@ -2791,6 +2806,7 @@ function openPurchaseEditor(purchaseId = null) {
   document.getElementById('purchase-product-search').value = '';
   document.getElementById('clear-purchase-product')?.classList.add('hidden');
   document.getElementById('purchase-date').value = sale?.createdAt ? toDateInputValue(new Date(sale.createdAt)) : toDateInputValue(new Date());
+  document.getElementById('purchase-note').value = sale?.note || '';
   document.getElementById('purchase-editor-title').textContent = sale ? 'Modifier l’ajout au stock' : 'Ajouter au stock';
   showMessage('purchase-message', '', '');
   renderPurchaseProducts();
@@ -2819,10 +2835,19 @@ async function completePurchase() {
   if (button) button.disabled = true;
 
   try {
+<<<<<<< HEAD
     const payload = {
       type: 'purchase',
       date: document.getElementById('purchase-date')?.value || '',
       items: purchaseCart.map(({ productId, quantity, unitPrice }) => ({ productId, quantity, unitPrice }))
+=======
+    // The shop does not track what it paid for stock, so the cost is recorded as 0.
+    const payload = {
+      type: 'purchase',
+      date: document.getElementById('purchase-date')?.value || '',
+      note: document.getElementById('purchase-note')?.value.trim() || '',
+      items: [{ productId: purchaseCart[0].productId, quantity, unitPrice: 0 }]
+>>>>>>> f50853237fae777b1aeb03be4500344eae6f9387
     };
     const saved = editingPurchaseId
       ? await mutate(`/sales/${editingPurchaseId}`, 'PUT', payload)
@@ -2977,13 +3002,13 @@ function getExpensesForFilter(filter, type = 'all') {
     .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
 }
 
-// What the Détail column names: the counterparty for a sale, the supplier for a
+// What the Détail column names: the counterparty for a sale, the note on a
 // delivery, and for the types that have neither, what actually happened.
 function reportRowParty(type, sale, customer) {
-  if (type === 'purchase') return sale.supplier || 'Fournisseur non précisé';
+  if (type === 'purchase') return sale.note || 'Ajout au stock';
   if (type === 'waste') return sale.reason || 'Autre';
   if (type === 'adjustment' || type === 'adjustment_out') return 'Correction de stock';
-  return customer ? customer.name : 'Client de passage';
+  return saleCustomerName(sale, customer);
 }
 
 // Every movement in the period, newest first, as one shape regardless of source.
